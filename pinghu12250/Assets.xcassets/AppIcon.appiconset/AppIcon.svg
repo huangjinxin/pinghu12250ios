@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- 背景 -->
+  <circle cx="512" cy="512" r="460" fill="#4F46E5"/>
+
+  <!-- 水波纹（湖的意象） -->
+  <ellipse cx="512" cy="680" rx="320" ry="60" fill="none" stroke="#FFFFFF" stroke-width="8" opacity="0.3"/>
+  <ellipse cx="512" cy="720" rx="380" ry="50" fill="none" stroke="#FFFFFF" stroke-width="6" opacity="0.2"/>
+  <ellipse cx="512" cy="760" rx="420" ry="40" fill="none" stroke="#FFFFFF" stroke-width="4" opacity="0.1"/>
+
+  <!-- 中心书本（知识从湖中升起） -->
+  <path d="M380 350 L380 580 L512 620 L644 580 L644 350 L512 390 Z" fill="#FFFFFF"/>
+  <path d="M512 390 L512 620" stroke="#4F46E5" stroke-width="4"/>
+
+  <!-- 书页纹理 -->
+  <path d="M410 420 L490 440" stroke="#C7D2FE" stroke-width="8" stroke-linecap="round"/>
+  <path d="M410 470 L490 490" stroke="#C7D2FE" stroke-width="8" stroke-linecap="round"/>
+  <path d="M534 440 L614 420" stroke="#C7D2FE" stroke-width="8" stroke-linecap="round"/>
+  <path d="M534 490 L614 470" stroke="#C7D2FE" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- 苹果叶子（苹的意象） -->
+  <path d="M512 300 Q540 260 512 220 Q560 260 540 310" fill="#10B981"/>
+  <path d="M512 300 Q484 260 512 220 Q464 260 484 310" fill="#10B981"/>
+
+  <!-- 发光点 -->
+  <circle cx="512" cy="280" r="20" fill="#F59E0B"/>
+
+  <!-- 装饰星 -->
+  <circle cx="340" cy="440" r="10" fill="#FFFFFF" opacity="0.6"/>
+  <circle cx="684" cy="440" r="10" fill="#FFFFFF" opacity="0.6"/>
+  <circle cx="280" cy="540" r="6" fill="#FFFFFF" opacity="0.4"/>
+  <circle cx="744" cy="540" r="6" fill="#FFFFFF" opacity="0.4"/>
+</svg>

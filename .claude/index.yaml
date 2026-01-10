@@ -1,0 +1,201 @@
+# iOS 端 AI 专用代码索引
+# 更新时间: 2025-12-28
+
+project:
+  name: pinghu12250-ios
+  desc: 苹湖少儿空间 iOS 客户端
+  platform: iOS 17+
+  stack: [SwiftUI, Combine, Vision, PencilKit, PDFKit]
+  base_url: https://pinghu.706tech.cn/api
+
+# ========== 核心规则 ==========
+rules:
+  - import_combine: "使用 ObservableObject 必须 import Combine"
+  - local_prefix: "本地专用类型加 Local 前缀避免与 API 类型冲突"
+  - preview_factory: "Preview 使用 .placeholder() 工厂方法"
+  - pencilkit_bounds: "PKStroke 使用 renderBounds 而非 path.bounds"
+  - codingkeys: "处理后端字段名差异用 CodingKeys"
+  - single_reader: "【强制】只允许一套 PDF 阅读器实现，禁止创建第二套"
+  - safe_slider: "【强制】禁止使用原生 Slider，必须使用 SafeSlider"
+  - range_guard: "【强制】View 层接收的数值必须经过 RangeGuard 验证"
+
+# ========== PDF 阅读器架构（唯一实现）==========
+reader_architecture:
+  authority: "Features/Study/Reader/"
+  components:
+    - TextbookReaderView.swift   # 顶层路由器（根据屏幕方向切换模式）
+    - ReaderState.swift          # 统一状态管理（唯一状态源）
+    - PureReaderView.swift       # 竖屏纯阅读模式
+    - AssistModeView.swift       # 横屏 AI 辅助模式
+    - AITabPanels.swift          # AI 5Tab 面板
+    - CustomSelectionMenu.swift  # 自定义选择菜单
+  constraints:
+    - "所有教材/电子书入口必须使用 TextbookReaderView"
+    - "禁止创建新的 Reader 实现"
+    - "禁止直接引用 TextbookStudyView（已废弃）"
+    - "ReaderState 是唯一状态源，禁止在 View 中重复创建"
+  deprecated:
+    # 以下文件已删除，不再存在于项目中
+    # - TextbookStudyView.swift (已删除)
+    # - TextbookStudyViewModel (已删除)
+    # - StudyToolbar.swift (已删除)
+    # - AIAssistantSheet.swift (已删除)
+    # - PDFStudyRenderer.swift (已删除)
+    # - AIMessageView.swift (已删除)
+    # - StudySessionManager.swift (已删除)
+
+# ========== 稳定性组件 ==========
+stability:
+  SafeSlider:
+    path: Core/UI/SafeSlider.swift
+    usage: "替代 SwiftUI Slider，防止 range/step 非法值崩溃"
+    mandatory: true
+  RangeGuard:
+    path: Core/Stability/RangeGuard.swift
+    usage: "数值范围守卫，防止 NaN/infinity/非法值"
+    methods:
+      - guardPage(page, totalPages)      # 页码守卫
+      - guardTotalPages(totalPages)      # 总页数守卫
+      - guardProgress(progress)          # 进度守卫
+      - guardDimension(dimension)        # 尺寸守卫
+
+# ========== 目录结构 ==========
+structure:
+  pinghu12250/:
+    Core/:
+      Network/:
+        - APIService.swift      # 网络请求服务
+        - APIConfig.swift       # API 配置（baseURL、endpoints）
+      Auth/:
+        - AuthManager.swift     # 登录状态管理
+        - KeychainHelper.swift  # Token 安全存储
+      UI/:
+        Components/:
+          - FlowLayout.swift    # 流式布局（唯一定义在 ProfileView.swift）
+          - CompactRecordButton.swift  # 录音按钮
+
+    Features/:
+      Reading/:
+        - TextbookModels.swift  # 教材数据模型（权威定义）
+        - TextbookViewModel.swift
+        - TextbookListView.swift
+        - TextbookDetailView.swift
+        - PDFReaderView.swift
+
+      Study/:
+        - StudySessionManager.swift  # 学习会话管理
+        - AIMessageView.swift        # AI 消息渲染
+        Practice/:
+          - PracticeModels.swift     # 练习题模型
+          - PracticeView.swift
+        Notes/:
+          - NotesModels.swift        # 笔记模型
+          - NoteEditorView.swift
+        Handwriting/:
+          - HandwritingRecognizer.swift  # Vision 手写识别
+
+      Growth/:
+        - RuleModels.swift       # 奖罚规则模型
+        - MyGrowthView.swift     # 心路历程页面
+        - MyGrowthViewModel.swift
+
+      Wallet/:
+        - WalletModels.swift     # 钱包模型
+        - WalletView.swift
+        - WalletViewModel.swift
+
+      Works/:
+        - WorksModels.swift      # 作品模型（画廊/朗诵/诗词/市场）
+        - WorksView.swift
+        - WorksViewModel.swift
+
+      Diary/:
+        - DiaryModels.swift      # 日记模型
+        - DiaryView.swift
+
+# ========== 模型文件索引 ==========
+models:
+  TextbookModels.swift:
+    - Textbook           # 核心教材模型
+    - TextbookUnit
+    - TextbookLesson
+    - ReadingNote
+    - ReadingProgress    # 注意：与 StudySessionManager 中的 LocalReadingProgress 区分
+    - AnyCodable         # JSON 任意值处理
+
+  RuleModels.swift:
+    - RuleType
+    - RuleStandard
+    - RuleTemplate
+    - RuleSubmission
+    - PaginationInfo     # 分页信息（通用）
+
+  PracticeModels.swift:
+    - PracticeItem
+    - QuestionType       # enum
+    - OptionItem
+    - UserAnswer
+    - PracticeSession    # 注意：与 LocalPracticeSession 区分
+    - PracticeSettings
+
+  NotesModels.swift:
+    - StudyNote
+    - StudyNoteType      # enum
+    - StudyNoteColor     # enum
+    - NoteAttachment
+    - NoteFilter
+
+  WalletModels.swift:
+    - Wallet
+    - WalletTransaction
+    - PayCode
+    - PayOrder
+    - FlexibleDouble     # 兼容字符串/数字的 Double
+    - PointLog
+    - ExchangeRecord
+
+  WorksModels.swift:
+    - GalleryWork
+    - RecitationWork
+    - PoetryWorkData     # 注意命名避免冲突
+    - MarketWork
+    - LeaderboardEntry
+
+  DiaryModels.swift:
+    - DiaryData          # 注意命名避免冲突
+    - DiaryAuthor
+    - DiaryTag
+    - DiaryComment
+
+  StudySessionManager.swift:
+    - LocalReadingProgress    # Local 前缀版本
+    - LocalPracticeSession
+    - LocalPracticeRecord
+    - ChatSession
+    - ChatMessageData
+
+# ========== ViewModel 索引 ==========
+viewmodels:
+  - TextbookViewModel      # Features/Reading/
+  - MyGrowthViewModel      # Features/Growth/
+  - WalletViewModel        # Features/Wallet/
+  - WorksViewModel         # Features/Works/
+
+# ========== 常见问题解决 ==========
+troubleshooting:
+  "Type redeclared":
+    cause: "同名类型在多个文件定义"
+    fix: "保留一个定义，或加前缀区分（如 Local*）"
+    example: "ReadingProgress vs LocalReadingProgress"
+
+  "Cannot find type in scope":
+    cause: "缺少 import 或类型未定义"
+    fix: "检查 import 语句，确认类型定义文件"
+
+  "No member 'bounds'":
+    cause: "PKStroke API 变化"
+    fix: "使用 stroke.renderBounds 替代 stroke.path.bounds"
+
+  "Generic parameter could not be inferred":
+    cause: "ObservableObject 缺少 Combine"
+    fix: "添加 import Combine"

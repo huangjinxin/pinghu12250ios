@@ -1,0 +1,128 @@
+# iOS Swift Import 规则
+# 用于避免编译错误
+# 更新时间: 2025-12-28
+
+# ========== 必须 Import 规则 ==========
+required_imports:
+
+  ObservableObject:
+    requires: [Combine]
+    pattern: "class.*:.*ObservableObject"
+    fix: "添加 import Combine"
+
+  Published:
+    requires: [Combine]
+    pattern: "@Published"
+    fix: "添加 import Combine"
+
+  PKDrawing:
+    requires: [PencilKit]
+    pattern: "PKDrawing|PKStroke|PKCanvasView"
+    fix: "添加 import PencilKit"
+
+  VNRecognizeTextRequest:
+    requires: [Vision]
+    pattern: "VN[A-Z]|Vision"
+    fix: "添加 import Vision"
+
+  PDFDocument:
+    requires: [PDFKit]
+    pattern: "PDF[A-Z]"
+    fix: "添加 import PDFKit"
+
+  PhotosPicker:
+    requires: [PhotosUI]
+    pattern: "PhotosPicker|PHAsset"
+    fix: "添加 import PhotosUI"
+
+  AVPlayer:
+    requires: [AVFoundation]
+    pattern: "AVPlayer|AVAudio|AVAsset"
+    fix: "添加 import AVFoundation"
+
+  AVKit:
+    requires: [AVKit]
+    pattern: "VideoPlayer"
+    fix: "添加 import AVKit"
+
+# ========== 常用 Import 组合 ==========
+common_combinations:
+
+  standard_view:
+    imports: [SwiftUI]
+    desc: "基础 SwiftUI 视图"
+
+  observable_view:
+    imports: [SwiftUI, Combine]
+    desc: "带 ObservableObject 的视图"
+
+  network_model:
+    imports: [Foundation]
+    desc: "网络数据模型（Codable）"
+
+  pencil_view:
+    imports: [SwiftUI, PencilKit, Combine]
+    desc: "手写输入视图"
+
+  vision_service:
+    imports: [Foundation, Vision, UIKit, Combine]
+    desc: "Vision 识别服务"
+
+  pdf_view:
+    imports: [SwiftUI, PDFKit]
+    desc: "PDF 阅读视图"
+
+  media_picker:
+    imports: [SwiftUI, PhotosUI]
+    desc: "媒体选择视图"
+
+  audio_view:
+    imports: [SwiftUI, AVFoundation, AVKit, Combine]
+    desc: "音频录制/播放视图"
+
+# ========== 已知问题文件 ==========
+# 这些文件曾因缺少 import 导致编译错误，已修复
+fixed_files:
+  - path: Features/Study/TextbookStudyView.swift
+    added: Combine
+
+  - path: Core/UI/ResizableSplitView.swift
+    added: Combine
+
+  - path: Features/Study/Practice/PracticeView.swift
+    added: Combine
+
+  - path: Features/Study/StudySessionManager.swift
+    added: Combine
+
+  - path: Features/Study/Handwriting/HandwritingRecognizer.swift
+    added: [Combine, PencilKit]
+
+  - path: Features/Study/PDFAnnotationLayer.swift
+    added: Combine
+
+  - path: Core/UI/AudioRecorderView.swift
+    added: Combine
+
+  - path: Features/Growth/MyGrowthView.swift
+    added: Combine
+
+  - path: Features/Study/AIMessageView.swift
+    added: Combine
+
+# ========== 检查命令 ==========
+check_commands:
+  find_missing_combine: |
+    # 查找使用 ObservableObject 但缺少 import Combine 的文件
+    for f in $(find . -name "*.swift"); do
+      if grep -q "ObservableObject" "$f" && ! grep -q "import Combine" "$f"; then
+        echo "$f"
+      fi
+    done
+
+  find_missing_pencilkit: |
+    for f in $(find . -name "*.swift"); do
+      if grep -q "PKStroke\|PKDrawing" "$f" && ! grep -q "import PencilKit" "$f"; then
+        echo "$f"
+      fi
+    done

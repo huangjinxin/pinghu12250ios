@@ -1,0 +1,42 @@
+.
+├── README.md
+├── backend
+│   ├── Dockerfile
+│   ├── Dockerfile.dev
+│   ├── package.json
+│   ├── prisma
+│   │   ├── migrations
+│   │   ├── schema.prisma
+│   │   └── seed.js
+│   ├── src
+│   │   ├── controllers
+│   │   ├── index.js
+│   │   ├── middleware
+│   │   ├── routes
+│   │   └── utils
+│   └── uploads
+├── docker-compose.prod.yml
+├── docker-compose.yml
+├── frontend
+│   ├── Dockerfile
+│   ├── Dockerfile.dev
+│   ├── index.html
+│   ├── nginx.conf
+│   ├── package.json
+│   ├── postcss.config.js
+│   ├── src
+│   │   ├── App.vue
+│   │   ├── api
+│   │   ├── assets
+│   │   ├── components
+│   │   ├── main.js
+│   │   ├── router
+│   │   ├── stores
+│   │   ├── style.css
+│   │   └── views
+│   ├── tailwind.config.js
+│   └── vite.config.js
+├── project-structure.txt
+└── start.sh
+
+18 directories, 22 files

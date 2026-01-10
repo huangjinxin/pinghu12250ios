@@ -1,0 +1,115 @@
+# iOS 开发检查清单
+# AI 在修改代码前/后应检查这些项目
+# 更新时间: 2025-12-28
+
+# ========== 创建新文件时 ==========
+new_file:
+  - action: "检查必要的 import"
+    details:
+      - "SwiftUI 视图：import SwiftUI"
+      - "使用 ObservableObject：+ import Combine"
+      - "使用 @Published：+ import Combine"
+      - "使用 PKDrawing/PKStroke：+ import PencilKit"
+      - "使用 Vision 识别：+ import Vision"
+      - "使用 PDFDocument：+ import PDFKit"
+
+  - action: "检查类型命名"
+    details:
+      - "避免与 SwiftUI 保留名冲突（如 Text, Image, Color）"
+      - "本地专用类型加 Local 前缀"
+      - "API 返回的数据类型可加 Data 后缀（如 DiaryData）"
+
+  - action: "检查 Codable 实现"
+    details:
+      - "字段名与后端 API 一致"
+      - "不一致时使用 CodingKeys"
+      - "可选字段标记为 Optional"
+
+# ========== 修改现有文件时 ==========
+modify_file:
+  - action: "保持 import 完整"
+    details:
+      - "不要删除现有的 import 语句"
+      - "新增功能可能需要新的 import"
+
+  - action: "检查类型引用"
+    details:
+      - "确认引用的类型已定义或已 import"
+      - "同名类型冲突时使用模块前缀或重命名"
+
+  - action: "Preview 使用工厂方法"
+    details:
+      - "Textbook: .placeholder(id:title:subject:...)"
+      - "避免直接调用复杂构造器"
+
+# ========== 添加新模型时 ==========
+new_model:
+  - action: "选择正确的文件"
+    locations:
+      Textbook相关: TextbookModels.swift
+      奖罚规则: RuleModels.swift
+      练习题目: PracticeModels.swift
+      笔记相关: NotesModels.swift
+      钱包支付: WalletModels.swift
+      作品相关: WorksModels.swift
+      日记相关: DiaryModels.swift
+      本地存储: StudySessionManager.swift
+
+  - action: "检查是否与现有类型重复"
+    details:
+      - "搜索项目中是否已有同名类型"
+      - "重复时考虑复用或加前缀"
+
+  - action: "更新 shared-schema.yaml"
+    details:
+      - "如果是两端共享的模型，添加到根目录 .claude/shared-schema.yaml"
+
+# ========== 添加 ViewModel 时 ==========
+new_viewmodel:
+  - action: "必须 import Combine"
+  - action: "继承 ObservableObject"
+  - action: "状态属性使用 @Published"
+  - action: "网络请求使用 async/await"
+  - action: "错误处理显示用户友好消息"
+
+# ========== PencilKit 相关 ==========
+pencilkit:
+  - action: "使用正确的 API"
+    correct:
+      bounds: "stroke.renderBounds"
+      image: "drawing.image(from:scale:)"
+    wrong:
+      bounds: "stroke.path.bounds"
+
+  - action: "必要的 import"
+    required: [PencilKit, Combine]
+
+# ========== 编译前检查 ==========
+before_build:
+  - "所有 ObservableObject 类都有 import Combine"
+  - "所有 @Published 属性所在文件都有 import Combine"
+  - "没有重复的类型定义"
+  - "Preview 使用 .placeholder() 而非直接构造"
+  - "PKStroke 使用 renderBounds"
+
+# ========== 编译错误快速修复 ==========
+quick_fixes:
+  "Generic parameter 'ObjectType' could not be inferred":
+    cause: "ObservableObject 缺少 Combine"
+    fix: "添加 import Combine 到文件顶部"
+
+  "Invalid redeclaration of 'TypeName'":
+    cause: "类型在多处定义"
+    fix: "删除重复定义，或加前缀区分"
+
+  "Value of type 'PKStrokePath' has no member 'bounds'":
+    cause: "PencilKit API 使用错误"
+    fix: "使用 stroke.renderBounds 替代 stroke.path.bounds"
+
+  "Cannot find type 'TypeName' in scope":
+    cause: "类型未定义或未导入"
+    fix: "检查类型定义文件是否存在，或添加正确的 import"
+
+  "Ambiguous use of 'TypeName'":
+    cause: "多个模块有同名类型"
+    fix: "使用模块前缀（如 MyModule.TypeName）或重命名其中一个"
