@@ -107,6 +107,7 @@ class NotesSpotlightService {
             return item
         }
 
+        let itemCount = items.count
         CSSearchableIndex.default().indexSearchableItems(items) { error in
             if let error = error {
                 #if DEBUG
@@ -114,7 +115,7 @@ class NotesSpotlightService {
                 #endif
             } else {
                 #if DEBUG
-                print("[Spotlight] 批量索引成功: \(items.count) 条笔记")
+                print("[Spotlight] 批量索引成功: \(itemCount) 条笔记")
                 #endif
             }
         }
@@ -172,7 +173,7 @@ class NotesSpotlightService {
             }
 
             // 重新索引
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.indexNotes(notes, textbooks: textbooks)
             }
         }

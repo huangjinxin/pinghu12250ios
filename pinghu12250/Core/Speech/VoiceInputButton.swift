@@ -334,7 +334,7 @@ struct VoicePermissionAlert: View {
                 .font(.system(size: 40))
                 .foregroundColor(.red)
 
-            Text(error.localizedDescription ?? "权限错误")
+            Text(error.localizedDescription)
                 .font(.headline)
                 .multilineTextAlignment(.center)
 

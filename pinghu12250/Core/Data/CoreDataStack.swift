@@ -103,7 +103,7 @@ class CoreDataStack: ObservableObject {
     }
 
     /// 在后台上下文中执行操作
-    func performBackgroundTask(_ block: @escaping (NSManagedObjectContext) -> Void) {
+    func performBackgroundTask(_ block: @escaping @Sendable (NSManagedObjectContext) -> Void) {
         persistentContainer.performBackgroundTask(block)
     }
 

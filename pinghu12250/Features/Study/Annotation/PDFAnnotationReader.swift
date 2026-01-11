@@ -664,15 +664,21 @@ class PencilKitAnnotationContainerView: UIView {
             canvasView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
 
+        // 【架构合规】固定 z-order（只在初始化时设置一次）
+        // canvasView 必须在 pdfView 之上，以便接收触摸事件
+        // 之后不再修改 z-order，确保视图层级稳定
+        bringSubviewToFront(canvasView)
+
         #if DEBUG
-        print("[PencilKitContainer] Canvas view setup complete")
+        print("[PencilKitContainer] Canvas view setup complete, z-order fixed (canvas on top)")
         #endif
     }
 
     private func setupObservers() {
-        // 【核心】配置触摸类型隔离
-        // - PDFView.scrollView 只响应手指（滚动/缩放）
-        // - PKCanvasView 只响应 Pencil（绘制）
+        // 【架构合规】配置触摸类型隔离
+        // - 分流在 Layer 2 (touchesShouldBegin)，不在 Layer 1 (hitTest)
+        // - Pencil 触摸：PencilOnlyCanvasView 跟踪
+        // - 手指触摸：自动穿透到 PDFView（滚动/缩放）
         viewModel.pencilKitController.configureTouchTypeIsolation(pdfView: pdfView)
 
         // 监听页面变化
@@ -692,16 +698,22 @@ class PencilKitAnnotationContainerView: UIView {
         // lineWidth 补偿会在 commit 时使用最新的 scaleFactor
 
         #if DEBUG
-        print("[PencilKitContainer] Observers configured - touch type isolation enabled")
+        print("[PencilKitContainer] Observers configured - architecture-compliant touch isolation")
         #endif
     }
 
     // MARK: - Annotation Mode
 
+    /// 更新批注模式状态
+    ///
+    /// 架构合规性：
+    /// - 只修改 isHidden 和 firstResponder 状态
+    /// - 不修改 z-order（已在 init 时固定）
+    /// - 只在用户显式操作时调用（非触摸事件流中）
     func updateAnnotationMode(_ isAnnotationMode: Bool) {
         if isAnnotationMode {
             // 进入批注模式
-            bringSubviewToFront(canvasView)
+            // z-order 已在 setupCanvasView 中固定，无需再次调用 bringSubviewToFront
             viewModel.pencilKitController.enterAnnotationMode()
         } else {
             // 退出批注模式

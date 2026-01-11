@@ -44,19 +44,19 @@ class DiaryService: ObservableObject {
         let limit = pageSize
         let moodFilter = mood
 
+        // 提前构建 endpoint（在 MainActor 上）
+        var params: [String: String] = [
+            "page": "\(page)",
+            "limit": "\(limit)"
+        ]
+        if let mood = moodFilter {
+            params["mood"] = mood
+        }
+        let queryString = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
+        let endpoint = "\(APIConfig.Endpoints.diaries)?\(queryString)"
+
         // 网络请求在后台线程执行，不阻塞 MainActor
         let result: Result<DiaryListResponse, Error> = await Task.detached(priority: .userInitiated) {
-            var params: [String: String] = [
-                "page": "\(page)",
-                "limit": "\(limit)"
-            ]
-            if let mood = moodFilter {
-                params["mood"] = mood
-            }
-
-            let queryString = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
-            let endpoint = "\(APIConfig.Endpoints.diaries)?\(queryString)"
-
             do {
                 let response: DiaryListResponse = try await APIService.shared.get(endpoint)
                 return .success(response)

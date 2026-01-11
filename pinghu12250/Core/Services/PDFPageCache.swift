@@ -74,9 +74,10 @@ actor PDFRenderCoordinator {
             // 执行渲染（在后台线程）
             // 先获取 page 的边界，避免后续在闭包中访问 page
             let pageRect = page.bounds(for: .mediaBox)
+            nonisolated(unsafe) let capturedPage = page
             return await withCheckedContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async {
-                    let image = Self.renderPageSyncWithRect(pageRect: pageRect, page: page, size: size, scale: scale)
+                    let image = Self.renderPageSyncWithRect(pageRect: pageRect, page: capturedPage, size: size, scale: scale)
                     continuation.resume(returning: image)
                 }
             }

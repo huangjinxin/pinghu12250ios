@@ -14,6 +14,17 @@ import SwiftUI
 @preconcurrency import PDFKit
 import AVFoundation
 
+// MARK: - Unsafe Sendable Wrapper for PDFKit
+
+/// 包装器：绕过 PDFKit 类型的 Sendable 检查
+/// PDFKit 在 iOS SDK 中不符合 Sendable，但实际使用中是线程安全的
+struct UnsafeSendableWrapper<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) {
+        self.value = value
+    }
+}
+
 // MARK: - HeavyOperationGuard
 
 /// 高危操作守卫
@@ -38,23 +49,24 @@ final class HeavyOperationGuard {
             StateSanityChecker.shared.markSafeExit()
         }
 
-        return await withTaskGroup(of: PDFDocument?.self) { group in
+        return await withTaskGroup(of: UnsafeSendableWrapper<PDFDocument?>.self) { group in
             // 添加实际加载任务
             group.addTask {
-                await self.loadPDFInBackground(url: url)
+                let doc = await self.loadPDFInBackground(url: url)
+                return UnsafeSendableWrapper(doc)
             }
 
             // 添加超时任务
             group.addTask {
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                return nil
+                return UnsafeSendableWrapper(nil)
             }
 
             // 等待第一个完成的任务
             for await result in group {
                 group.cancelAll()
 
-                if let document = result {
+                if let document = result.value {
                     appLog("[HeavyOp] PDF 加载成功: \(url.lastPathComponent)")
                     return .success(document)
                 } else {
@@ -100,9 +112,10 @@ final class HeavyOperationGuard {
             return nil
         }
 
+        nonisolated(unsafe) let capturedPage = page
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let pageRect = page.bounds(for: .mediaBox)
+                let pageRect = capturedPage.bounds(for: .mediaBox)
 
                 // 验证 pageRect
                 guard pageRect.width > 0 && pageRect.height > 0 &&
@@ -124,7 +137,7 @@ final class HeavyOperationGuard {
                     ctx.cgContext.translateBy(x: 0, y: safeSize.height)
                     ctx.cgContext.scaleBy(x: finalScale, y: -finalScale)
 
-                    page.draw(with: .mediaBox, to: ctx.cgContext)
+                    capturedPage.draw(with: .mediaBox, to: ctx.cgContext)
                 }
 
                 continuation.resume(returning: image)

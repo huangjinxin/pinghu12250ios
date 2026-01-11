@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import UIKit
 
 struct TextbookDetailView: View {
     let textbook: Textbook
@@ -17,11 +18,13 @@ struct TextbookDetailView: View {
     @State private var isDownloading = false
     @State private var downloadError: String?
 
-    // 模式选择和阅读器状态
-    @State private var showModeSelector = false
+    // 阅读器状态
     @State private var showReader = false
-    @State private var showAnnotationReader = false
-    @State private var annotationTextbook: Textbook?
+
+    // 导出状态
+    @State private var showExportSheet = false
+    @State private var exportFileURL: URL?
+    @State private var exportError: String?
 
     var body: some View {
         ScrollView {
@@ -60,39 +63,6 @@ struct TextbookDetailView: View {
         }
         .fullScreenCover(isPresented: $showReader) {
             TextbookReaderView(textbook: textbook)
-        }
-        // 模式选择器
-        .sheet(isPresented: $showModeSelector) {
-            if #available(iOS 16.0, *) {
-                TextbookModeSelector(
-                    textbook: textbook,
-                    onSelectReading: {
-                        showModeSelector = false
-                        showReader = true
-                    },
-                    onSelectAnnotation: {
-                        showModeSelector = false
-                        annotationTextbook = textbook
-                    },
-                    onDismiss: {
-                        showModeSelector = false
-                    }
-                )
-                .presentationDetents([.height(320)])
-                .presentationDragIndicator(.visible)
-            }
-        }
-        // 批注阅读器
-        .fullScreenCover(item: $annotationTextbook) { book in
-            if #available(iOS 16.0, *) {
-                PDFAnnotationReaderView(
-                    textbook: book,
-                    initialPageIndex: nil,
-                    onDismiss: {
-                        annotationTextbook = nil
-                    }
-                )
-            }
         }
     }
 
@@ -175,10 +145,10 @@ struct TextbookDetailView: View {
     }
 
     private var actionButtons: some View {
-        HStack(spacing: 16) {
-            // 开始阅读 - 显示模式选择器
+        VStack(spacing: 12) {
+            // 开始阅读
             Button {
-                showModeSelector = true
+                showReader = true
             } label: {
                 HStack {
                     Image(systemName: "book.fill")
@@ -192,36 +162,64 @@ struct TextbookDetailView: View {
             }
             .disabled(!hasReadableContent)
 
-            // 下载离线
-            Button {
-                Task {
-                    await downloadForOffline()
-                }
-            } label: {
-                HStack {
-                    if isDownloading {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .primary))
-                    } else if offlineManager.isTextbookAvailableOffline(textbookId: textbook.id) {
-                        Image(systemName: "checkmark.circle.fill")
-                        Text("已下载")
-                    } else {
-                        Image(systemName: "arrow.down.circle")
-                        Text("离线下载")
+            HStack(spacing: 12) {
+                // 下载离线
+                Button {
+                    Task {
+                        await downloadForOffline()
                     }
+                } label: {
+                    HStack {
+                        if isDownloading {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .primary))
+                        } else if offlineManager.isTextbookAvailableOffline(textbookId: textbook.id) {
+                            Image(systemName: "checkmark.circle.fill")
+                            Text("已下载")
+                        } else {
+                            Image(systemName: "arrow.down.circle")
+                            Text("离线下载")
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(offlineManager.isTextbookAvailableOffline(textbookId: textbook.id) ? Color.green.opacity(0.15) : Color(.systemGray5))
+                    .foregroundColor(offlineManager.isTextbookAvailableOffline(textbookId: textbook.id) ? .green : .primary)
+                    .cornerRadius(12)
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(offlineManager.isTextbookAvailableOffline(textbookId: textbook.id) ? Color.green.opacity(0.15) : Color(.systemGray5))
-                .foregroundColor(offlineManager.isTextbookAvailableOffline(textbookId: textbook.id) ? .green : .primary)
-                .cornerRadius(12)
+                .disabled(isDownloading || !textbook.hasPdf)
+
+                // 保存到文件
+                Button {
+                    exportTextbook()
+                } label: {
+                    HStack {
+                        Image(systemName: "square.and.arrow.down")
+                        Text("保存文件")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(Color(.systemGray5))
+                    .foregroundColor(.primary)
+                    .cornerRadius(12)
+                }
+                .disabled(!hasReadableContent)
             }
-            .disabled(isDownloading || !textbook.hasPdf)
         }
         .alert("下载失败", isPresented: .constant(downloadError != nil)) {
             Button("确定") { downloadError = nil }
         } message: {
             Text(downloadError ?? "")
+        }
+        .alert("导出失败", isPresented: .constant(exportError != nil)) {
+            Button("确定") { exportError = nil }
+        } message: {
+            Text(exportError ?? "")
+        }
+        .sheet(isPresented: $showExportSheet) {
+            if let fileURL = exportFileURL {
+                ActivityViewController(activityItems: [fileURL])
+            }
         }
     }
 
@@ -260,6 +258,76 @@ struct TextbookDetailView: View {
 
     // MARK: - 方法
 
+    /// 导出教材文件
+    private func exportTextbook() {
+        // 清空之前的错误
+        exportError = nil
+
+        // 获取文件URL
+        guard let fileURL = getTextbookFileURL() else {
+            exportError = "文件未下载，请先下载教材"
+            return
+        }
+
+        // 创建临时文件，使用中文教材名
+        let fileName = "\(textbook.displayTitle).\(textbook.isEpub ? "epub" : "pdf")"
+        let tempDirectory = FileManager.default.temporaryDirectory
+        let tempFileURL = tempDirectory.appendingPathComponent(fileName)
+
+        do {
+            // 删除可能已存在的临时文件
+            if FileManager.default.fileExists(atPath: tempFileURL.path) {
+                try FileManager.default.removeItem(at: tempFileURL)
+            }
+
+            // 复制文件到临时目录
+            try FileManager.default.copyItem(at: fileURL, to: tempFileURL)
+
+            // 设置文件URL并显示分享界面
+            exportFileURL = tempFileURL
+            showExportSheet = true
+
+        } catch {
+            exportError = "导出失败: \(error.localizedDescription)"
+        }
+    }
+
+    /// 获取教材文件的本地URL
+    private func getTextbookFileURL() -> URL? {
+        // 优先处理EPUB
+        if textbook.isEpub, let epubURL = textbook.epubFullURL {
+            // 检查DownloadManager缓存
+            let fileName = epubURL.lastPathComponent
+            if let cachedURL = DownloadManager.shared.getCachedFileURL(for: epubURL, fileName: fileName) {
+                return cachedURL
+            }
+        }
+
+        // 处理PDF
+        if textbook.hasPdf, let pdfURL = textbook.pdfFullURL {
+            // 检查DownloadManager缓存
+            let fileName = pdfURL.lastPathComponent
+            if let cachedURL = DownloadManager.shared.getCachedFileURL(for: pdfURL, fileName: fileName) {
+                return cachedURL
+            }
+
+            // 检查OfflineManager下载
+            if offlineManager.isTextbookAvailableOffline(textbookId: textbook.id) {
+                // OfflineManager使用coredata存储，需要获取实际文件路径
+                // 假设文件存储在Documents/Textbooks目录
+                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+                let textbooksPath = documentsPath.appendingPathComponent("Textbooks", isDirectory: true)
+                let localPDFPath = textbooksPath.appendingPathComponent("\(textbook.id).pdf")
+
+                if FileManager.default.fileExists(atPath: localPDFPath.path) {
+                    return localPDFPath
+                }
+            }
+        }
+
+        return nil
+    }
+
     private func toggleFavorite() {
         Task {
             if isFavorite {
@@ -270,6 +338,25 @@ struct TextbookDetailView: View {
                 if success { isFavorite = true }
             }
         }
+    }
+}
+
+// MARK: - UIActivityViewController Wrapper
+
+struct ActivityViewController: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    let applicationActivities: [UIActivity]? = nil
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(
+            activityItems: activityItems,
+            applicationActivities: applicationActivities
+        )
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
+        // No updates needed
     }
 }
 

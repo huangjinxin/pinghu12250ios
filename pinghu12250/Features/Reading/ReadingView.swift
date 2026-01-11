@@ -1220,10 +1220,8 @@ struct MyTextbookCard: View {
     let textbook: Textbook
     @ObservedObject var viewModel: TextbookViewModel
 
-    // 模式选择和阅读器状态
-    @State private var showModeSelector = false
+    // 阅读器状态
     @State private var showReader = false
-    @State private var annotationTextbook: Textbook?
 
     // 使用相同的书本比例
     private let bookRatio: CGFloat = 0.71
@@ -1278,44 +1276,11 @@ struct MyTextbookCard: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            showModeSelector = true
+            showReader = true
         }
-        // 模式选择器
-        .sheet(isPresented: $showModeSelector) {
-            if #available(iOS 16.0, *) {
-                TextbookModeSelector(
-                    textbook: textbook,
-                    onSelectReading: {
-                        showModeSelector = false
-                        showReader = true
-                    },
-                    onSelectAnnotation: {
-                        showModeSelector = false
-                        annotationTextbook = textbook
-                    },
-                    onDismiss: {
-                        showModeSelector = false
-                    }
-                )
-                .presentationDetents([.height(320)])
-                .presentationDragIndicator(.visible)
-            }
-        }
-        // 学习模式
+        // 阅读器
         .fullScreenCover(isPresented: $showReader) {
             TextbookReaderView(textbook: textbook)
-        }
-        // 批注模式
-        .fullScreenCover(item: $annotationTextbook) { book in
-            if #available(iOS 16.0, *) {
-                PDFAnnotationReaderView(
-                    textbook: book,
-                    initialPageIndex: nil,
-                    onDismiss: {
-                        annotationTextbook = nil
-                    }
-                )
-            }
         }
     }
 
@@ -1913,10 +1878,8 @@ struct LibraryTextbookCard: View {
     var isSelected: Bool = false
     var onSelect: (() -> Void)?
 
-    // 模式选择和阅读器状态
-    @State private var showModeSelector = false
+    // 阅读器状态
     @State private var showReader = false
-    @State private var annotationTextbook: Textbook?
     @ObservedObject private var downloadManager = DownloadManager.shared
 
     // 书本比例：中国课本约 185mm × 260mm，比例约 0.71:1
@@ -1980,7 +1943,7 @@ struct LibraryTextbookCard: View {
             if isSelectionMode {
                 onSelect?()
             } else {
-                showModeSelector = true
+                showReader = true
             }
         }
         // 多选模式边框
@@ -1989,42 +1952,9 @@ struct LibraryTextbookCard: View {
                 .stroke(isSelected ? Color.appPrimary : Color.clear, lineWidth: 3)
                 .padding(-4)
         )
-        // 模式选择器
-        .sheet(isPresented: $showModeSelector) {
-            if #available(iOS 16.0, *) {
-                TextbookModeSelector(
-                    textbook: textbook,
-                    onSelectReading: {
-                        showModeSelector = false
-                        showReader = true
-                    },
-                    onSelectAnnotation: {
-                        showModeSelector = false
-                        annotationTextbook = textbook
-                    },
-                    onDismiss: {
-                        showModeSelector = false
-                    }
-                )
-                .presentationDetents([.height(320)])
-                .presentationDragIndicator(.visible)
-            }
-        }
-        // 学习模式
+        // 阅读器
         .fullScreenCover(isPresented: $showReader) {
             TextbookReaderView(textbook: textbook)
-        }
-        // 批注模式
-        .fullScreenCover(item: $annotationTextbook) { book in
-            if #available(iOS 16.0, *) {
-                PDFAnnotationReaderView(
-                    textbook: book,
-                    initialPageIndex: nil,
-                    onDismiss: {
-                        annotationTextbook = nil
-                    }
-                )
-            }
         }
     }
 

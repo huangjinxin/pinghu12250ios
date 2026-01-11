@@ -554,6 +554,7 @@ final class ReaderState: ObservableObject {
         // 在后台线程执行渲染
         // 提前在主线程获取 page 的属性，避免在后台线程访问 PDFPage
         let pageRect = page.bounds(for: .mediaBox)
+        nonisolated(unsafe) let capturedPage = page
 
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -566,7 +567,7 @@ final class ReaderState: ObservableObject {
                     context.cgContext.translateBy(x: 0, y: pageRect.height)
                     context.cgContext.scaleBy(x: 1, y: -1)
 
-                    page.draw(with: .mediaBox, to: context.cgContext)
+                    capturedPage.draw(with: .mediaBox, to: context.cgContext)
                 }
 
                 continuation.resume(returning: image)
@@ -721,16 +722,17 @@ final class ReaderState: ObservableObject {
         searchResults = []
 
         // 在后台线程执行搜索
+        nonisolated(unsafe) let capturedDocument = document
         let results = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 var foundResults: [PDFSearchResult] = []
 
                 // 使用 PDFDocument 的 findString 方法
-                let selections = document.findString(query, withOptions: .caseInsensitive)
+                let selections = capturedDocument.findString(query, withOptions: .caseInsensitive)
 
                 for selection in selections {
                     guard let page = selection.pages.first else { continue }
-                    let pageIndex = document.index(for: page)
+                    let pageIndex = capturedDocument.index(for: page)
 
                     // 获取匹配文本
                     let matchText = selection.string ?? query

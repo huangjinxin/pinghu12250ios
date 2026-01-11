@@ -73,7 +73,7 @@ class DiaryAIService: ObservableObject {
         loadingText = DiaryAILoadingTexts.random()
         loadingTextTimer?.invalidate()
         loadingTextTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.loadingText = DiaryAILoadingTexts.random()
             }
         }
@@ -347,13 +347,14 @@ class DiaryAIService: ObservableObject {
         let limit = pageSize
         let filter = filterType
 
+        // 提前构建 endpoint（在 MainActor 上）
+        var endpoint = "/ai-analysis/diary/history?page=\(page)&limit=\(limit)"
+        if let filterType = filter, !filterType.isEmpty {
+            endpoint += "&isBatch=\(filterType == "batch" ? "true" : "false")"
+        }
+
         // 网络请求在后台线程执行，不阻塞 MainActor
         let result: Result<DiaryAnalysisHistoryResponse, Error> = await Task.detached(priority: .userInitiated) {
-            var endpoint = "/ai-analysis/diary/history?page=\(page)&limit=\(limit)"
-            if let filterType = filter, !filterType.isEmpty {
-                endpoint += "&isBatch=\(filterType == "batch" ? "true" : "false")"
-            }
-
             do {
                 let response: DiaryAnalysisHistoryResponse = try await APIService.shared.get(endpoint)
                 return .success(response)
