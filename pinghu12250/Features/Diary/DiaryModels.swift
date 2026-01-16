@@ -341,6 +341,68 @@ struct DiaryAnalysisData: Identifiable, Codable {
         guard let time = responseTime else { return "" }
         return String(format: "%.1f", Double(time) / 1000.0)
     }
+
+    /// 显示标题
+    var displayTitle: String {
+        if let snapshot = diarySnapshot {
+            switch snapshot {
+            case .single(let item):
+                return item.title ?? "日记分析"
+            case .batch(let items):
+                return items.first?.title ?? "批量分析(\(items.count)篇)"
+            }
+        }
+        return isBatch ? "批量分析" : "日记分析"
+    }
+
+    /// 相对时间
+    var relativeTime: String {
+        guard let createdAt = createdAt else { return "" }
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var date = isoFormatter.date(from: createdAt)
+        if date == nil {
+            isoFormatter.formatOptions = [.withInternetDateTime]
+            date = isoFormatter.date(from: createdAt)
+        }
+        guard let parsedDate = date else { return "" }
+
+        let now = Date()
+        let diff = now.timeIntervalSince(parsedDate)
+
+        if diff < 60 { return "刚刚" }
+        if diff < 3600 { return "\(Int(diff / 60))分钟前" }
+        if diff < 86400 { return "\(Int(diff / 3600))小时前" }
+        if diff < 604800 { return "\(Int(diff / 86400))天前" }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        return formatter.string(from: parsedDate)
+    }
+
+    /// 分析类型标签
+    var analysisTypeLabel: String {
+        isBatch ? "批量分析" : "单篇分析"
+    }
+
+    /// 总体评分（从分析文本中提取）
+    var overallScore: Int? {
+        nil
+    }
+
+    /// 摘要（分析文本的前100字）
+    var summary: String? {
+        let text = analysis.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty { return nil }
+        if text.count <= 100 { return text }
+        return String(text.prefix(100)) + "..."
+    }
+
+    /// 完整分析结果
+    var result: String? {
+        let text = analysis.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
 }
 
 /// 日记快照（可以是单个或数组）

@@ -17,6 +17,7 @@ struct WorksGalleryView: View {
     enum WorksTab: String, CaseIterable {
         case gallery = "少儿画廊"
         case recitation = "少儿朗诵"
+        case diaryAnalysis = "日记分析"
         case poetry = "唐诗宋词"
         case shopping = "购物广场"
 
@@ -24,6 +25,7 @@ struct WorksGalleryView: View {
             switch self {
             case .gallery: return "photo.artframe"
             case .recitation: return "mic.fill"
+            case .diaryAnalysis: return "doc.text.magnifyingglass"
             case .poetry: return "text.book.closed"
             case .shopping: return "cart.fill"
             }
@@ -43,6 +45,8 @@ struct WorksGalleryView: View {
                         GalleryTabView(viewModel: viewModel)
                     case .recitation:
                         RecitationTabView(viewModel: viewModel)
+                    case .diaryAnalysis:
+                        DiaryAnalysisTabView()
                     case .poetry:
                         PoetryWorksTabView(viewModel: viewModel)
                     case .shopping:
@@ -135,7 +139,7 @@ struct GalleryTabView: View {
                 .padding()
 
                 // 加载更多
-                if viewModel.hasMore {
+                if viewModel.galleryHasMore {
                     Button {
                         Task { await viewModel.loadGalleryWorks() }
                     } label: {
@@ -367,7 +371,7 @@ struct RecitationTabView: View {
                 .padding()
 
                 // 加载更多
-                if viewModel.hasMore {
+                if viewModel.recitationHasMore {
                     Button {
                         Task { await viewModel.loadRecitationWorks() }
                     } label: {
@@ -678,7 +682,7 @@ struct PoetryWorksTabView: View {
                     .padding(.vertical, 20)
 
                     // 加载更多
-                    if viewModel.hasMore {
+                    if viewModel.poetryHasMore {
                         Button {
                             Task { await viewModel.loadPoetryWorks() }
                         } label: {
@@ -1951,6 +1955,160 @@ func emptyState(icon: String, text: String) -> some View {
     }
     .frame(maxWidth: .infinity)
     .padding(40)
+}
+
+// MARK: - 日记分析 Tab（作品广场版本）
+
+struct DiaryAnalysisTabView: View {
+    @StateObject private var aiService = DiaryAIService.shared
+    @State private var selectedRecord: DiaryAnalysisData?
+
+    var body: some View {
+        ScrollView {
+            if aiService.isLoadingHistory && aiService.analysisHistory.isEmpty {
+                ProgressView()
+                    .padding(40)
+            } else if aiService.analysisHistory.isEmpty {
+                emptyState(icon: "doc.text.magnifyingglass", text: "暂无日记分析记录")
+            } else {
+                LazyVStack(spacing: 12) {
+                    ForEach(aiService.analysisHistory) { record in
+                        WorksDiaryAnalysisCard(record: record)
+                            .onTapGesture {
+                                selectedRecord = record
+                            }
+                    }
+                }
+                .padding()
+            }
+        }
+        .refreshable {
+            await aiService.loadAnalysisHistory()
+        }
+        .task {
+            if aiService.analysisHistory.isEmpty {
+                await aiService.loadAnalysisHistory()
+            }
+        }
+        .sheet(item: $selectedRecord) { record in
+            WorksDiaryAnalysisDetailSheet(record: record)
+        }
+    }
+}
+
+struct WorksDiaryAnalysisCard: View {
+    let record: DiaryAnalysisData
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // 标题和日期
+            HStack {
+                Text(record.displayTitle)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
+                Text(record.relativeTime)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            // 分析类型标签
+            HStack(spacing: 8) {
+                Text(record.analysisTypeLabel)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.appPrimary.opacity(0.1))
+                    .foregroundColor(.appPrimary)
+                    .cornerRadius(6)
+
+                if let score = record.overallScore {
+                    Text("评分: \(score)")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.1))
+                        .foregroundColor(.orange)
+                        .cornerRadius(6)
+                }
+            }
+
+            // 摘要
+            if let summary = record.summary, !summary.isEmpty {
+                Text(summary)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(3)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+    }
+}
+
+struct WorksDiaryAnalysisDetailSheet: View {
+    let record: DiaryAnalysisData
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // 标题
+                    Text(record.displayTitle)
+                        .font(.title2)
+                        .fontWeight(.bold)
+
+                    // 分析类型和评分
+                    HStack(spacing: 12) {
+                        Text(record.analysisTypeLabel)
+                            .font(.subheadline)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.appPrimary.opacity(0.1))
+                            .foregroundColor(.appPrimary)
+                            .cornerRadius(8)
+
+                        if let score = record.overallScore {
+                            HStack(spacing: 4) {
+                                Image(systemName: "star.fill")
+                                    .foregroundColor(.orange)
+                                Text("\(score)分")
+                                    .fontWeight(.medium)
+                            }
+                            .font(.subheadline)
+                        }
+
+                        Spacer()
+
+                        Text(record.relativeTime)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Divider()
+
+                    // 分析结果
+                    if let result = record.result, !result.isEmpty {
+                        Text(result)
+                            .font(.body)
+                    } else if let summary = record.summary {
+                        Text(summary)
+                            .font(.body)
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("分析详情")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+        }
+    }
 }
 
 #Preview {

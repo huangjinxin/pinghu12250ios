@@ -408,8 +408,15 @@ struct PrivacyToggleRow: View {
 // MARK: - 安全设置
 
 struct SecuritySection: View {
+    @EnvironmentObject var authManager: AuthManager
+
     var body: some View {
         VStack(spacing: 16) {
+            // 家长共享设置（仅学生角色可见）
+            if authManager.currentUser?.role == .student {
+                ParentSharingCard()
+            }
+
             // 修改登录密码
             PasswordChangeCard(
                 title: "修改登录密码",
@@ -424,6 +431,110 @@ struct SecuritySection: View {
             )
         }
     }
+}
+
+// MARK: - 家长共享设置卡片
+
+struct ParentSharingCard: View {
+    @EnvironmentObject var authManager: AuthManager
+    @State private var hideFromParents: Bool = false
+    @State private var isSaving = false
+    @State private var showAlert = false
+    @State private var alertMessage = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("家长共享设置")
+                    .font(.headline)
+                Spacer()
+                Text(hideFromParents ? "已停止共享" : "共享中")
+                    .font(.caption)
+                    .foregroundColor(hideFromParents ? .red : .green)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background((hideFromParents ? Color.red : Color.green).opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            Text("关闭共享后，绑定的家长将无法查看你的学习数据、作品和活动记录。同学之间的互动不受影响。")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("停止对家长共享")
+                        .fontWeight(.medium)
+                    Text("家长将无法查看你的任何数据")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                if isSaving {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                } else {
+                    Toggle("", isOn: $hideFromParents)
+                        .labelsHidden()
+                        .onChange(of: hideFromParents) { _, newValue in
+                            Task { await saveParentPrivacy(newValue) }
+                        }
+                }
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(8)
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .onAppear {
+            hideFromParents = authManager.currentUser?.profile?.hideFromParents ?? false
+        }
+        .alert("提示", isPresented: $showAlert) {
+            Button("确定", role: .cancel) { }
+        } message: {
+            Text(alertMessage)
+        }
+    }
+
+    private func saveParentPrivacy(_ value: Bool) async {
+        isSaving = true
+        defer { isSaving = false }
+
+        do {
+            let request = UpdateProfileRequest(hideFromParents: value)
+            let _: UpdateProfileResponse = try await APIService.shared.put(APIConfig.Endpoints.updateProfile, body: request)
+
+            // 刷新用户信息
+            await authManager.fetchCurrentUser()
+
+            alertMessage = value ? "已停止对家长共享" : "已开启对家长共享"
+            showAlert = true
+        } catch {
+            // 恢复原状态
+            hideFromParents = !value
+            alertMessage = "保存失败：\(error.localizedDescription)"
+            showAlert = true
+        }
+    }
+}
+
+/// 更新资料请求
+struct UpdateProfileRequest: Encodable {
+    let hideFromParents: Bool?
+
+    init(hideFromParents: Bool? = nil) {
+        self.hideFromParents = hideFromParents
+    }
+}
+
+/// 更新资料响应
+struct UpdateProfileResponse: Decodable {
+    let message: String?
+    let user: User?
 }
 
 struct PasswordChangeCard: View {

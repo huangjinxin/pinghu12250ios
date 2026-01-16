@@ -30,6 +30,12 @@ struct DashboardView: View {
                     animate: animate
                 )
 
+                // 朋友动态轮播
+                UnifiedFeedCarousel()
+                    .scaleEffect(animate ? 1 : 0.95)
+                    .opacity(animate ? 1 : 0)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.7).delay(0.05), value: animate)
+
                 // 时间范围选择器
                 TimeRangeSelector(
                     selected: $viewModel.selectedRange,

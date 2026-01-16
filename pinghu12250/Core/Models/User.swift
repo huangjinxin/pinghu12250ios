@@ -49,6 +49,7 @@ struct UserProfile: Codable {
     let joinedDays: Int?
     let profilePublic: Bool?
     let showStats: Bool?
+    let hideFromParents: Bool?  // 学生是否对家长隐藏共享数据
 }
 
 /// 用户模型

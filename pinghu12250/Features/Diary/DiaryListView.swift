@@ -27,7 +27,7 @@ struct DiaryListView: View {
     @State private var showLastWeekAnalyzeAlert = false  // 分析上周确认弹窗
 
     // Tab 切换
-    @State private var selectedTab = 0  // 0: 我的日记, 1: AI分析记录
+    @State private var selectedTab = 0  // 0: 我的日记, 1: AI分析记录, 2: 成就
 
     var body: some View {
         NavigationStack {
@@ -44,6 +44,10 @@ struct DiaryListView: View {
                     // AI 分析记录 Tab
                     DiaryAIHistoryTabView(aiService: aiService)
                         .tag(1)
+
+                    // 成就 Tab
+                    DiaryAchievementsTabView()
+                        .tag(2)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
             }
@@ -175,6 +179,9 @@ struct DiaryListView: View {
             }
             TabButton(title: "AI分析记录", isSelected: selectedTab == 1) {
                 withAnimation { selectedTab = 1 }
+            }
+            TabButton(title: "成就", isSelected: selectedTab == 2) {
+                withAnimation { selectedTab = 2 }
             }
         }
         .padding(.horizontal, 16)

@@ -32,6 +32,7 @@ struct MainTabView: View {
         case homework = "作业"
         case reading = "读书"
         case notes = "笔记"
+        case photos = "照片"
         case works = "作品"
         case wallet = "钱包"
 
@@ -45,6 +46,7 @@ struct MainTabView: View {
             case .homework: return "doc.text.fill"
             case .reading: return "books.vertical.fill"
             case .notes: return "note.text"
+            case .photos: return "photo.on.rectangle.angled"
             case .works: return "paintpalette.fill"
             case .wallet: return "creditcard.fill"
             }
@@ -58,6 +60,7 @@ struct MainTabView: View {
             case .homework: return .blue
             case .reading: return .green
             case .notes: return .yellow
+            case .photos: return .teal
             case .works: return .pink
             case .wallet: return .cyan
             }
@@ -201,7 +204,7 @@ struct MainTabView: View {
                 VStack(spacing: 4) {
                     sidebarSection("首页", tabs: [.dashboard])
                     sidebarSection("学习", tabs: [.diary, .homework, .reading, .notes])
-                    sidebarSection("社区", tabs: [.growth, .works])
+                    sidebarSection("社区", tabs: [.growth, .photos, .works])
                     sidebarSection("账户", tabs: [.wallet])
                 }
                 .padding(.vertical, 8)
@@ -383,7 +386,9 @@ struct MainTabView: View {
                 case .reading:
                     ReadingView()
                 case .notes:
-                    AllNotesView()
+                    NotesMainView()
+                case .photos:
+                    PhotosView()
                 case .works:
                     WorksGalleryView()
                 case .wallet:

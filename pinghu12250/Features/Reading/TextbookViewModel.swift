@@ -257,9 +257,9 @@ class TextbookViewModel: ObservableObject {
         defer { isLoadingNotes = false }
 
         do {
-            var endpoint = APIConfig.Endpoints.textbooksNotes
+            var endpoint = APIConfig.Endpoints.textbooksNotes + "?limit=100"
             if let id = textbookId {
-                endpoint += "?textbookId=\(id)"
+                endpoint += "&textbookId=\(id)"
             }
 
             // 使用兼容后端格式的响应类型

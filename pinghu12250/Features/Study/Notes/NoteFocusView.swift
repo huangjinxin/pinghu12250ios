@@ -3,6 +3,7 @@
 //  pinghu12250
 //
 //  笔记专注模式 - 沉浸式阅读和编辑笔记
+//  支持书写练习的AI评价功能
 //
 
 import SwiftUI
@@ -22,6 +23,30 @@ struct NoteFocusView: View {
 
     // 阅读进度
     @State private var scrollProgress: CGFloat = 0
+
+    // AI评价相关状态
+    @State private var evaluation: WritingEvaluation?
+    @State private var isLoadingEvaluation = false
+    @State private var isAnalyzing = false
+    @State private var canAnalyze = true
+    @State private var remainingHours = 0
+    @State private var showEvaluationDetail = false
+    @State private var showAnalyzeConfirm = false
+    @State private var evaluationError: String?
+
+    // 练习历史相关状态
+    @State private var practiceHistory: [ReadingNote] = []
+    @State private var currentHistoryIndex: Int = 0
+    @State private var practiceDetailNote: ReadingNote?
+    @StateObject private var viewModel = TextbookViewModel()
+
+    /// 当前显示的练习记录（历史中的某一条或原始笔记）
+    private var currentPracticeNote: ReadingNote {
+        if !practiceHistory.isEmpty && currentHistoryIndex < practiceHistory.count {
+            return practiceHistory[currentHistoryIndex]
+        }
+        return note
+    }
 
     var body: some View {
         ZStack {
@@ -63,6 +88,165 @@ struct NoteFocusView: View {
                 }
             }
         }
+        .sheet(isPresented: $showEvaluationDetail) {
+            if let evaluation = evaluation {
+                EvaluationDetailSheet(evaluation: evaluation)
+            }
+        }
+        .sheet(item: $practiceDetailNote) { practiceNote in
+            NavigationView {
+                NoteFocusView(note: practiceNote)
+                    .navigationBarHidden(true)
+            }
+        }
+        .alert("AI书写评价", isPresented: $showAnalyzeConfirm) {
+            Button("取消", role: .cancel) {}
+            Button("开始分析") {
+                Task { await startAnalysis() }
+            }
+        } message: {
+            Text("将使用AI对当前练字进行书写评价\n分析过程预计需要1-2分钟")
+        }
+        .alert("分析失败", isPresented: .init(
+            get: { evaluationError != nil },
+            set: { if !$0 { evaluationError = nil } }
+        )) {
+            Button("确定") { evaluationError = nil }
+        } message: {
+            Text(evaluationError ?? "")
+        }
+        .task {
+            if note.sourceType == "writing_practice" {
+                await loadEvaluationStatus()
+                await loadPracticeHistory()
+            } else if note.sourceType == "dict" {
+                // 生词笔记：加载该字的所有练习记录
+                await loadPracticeHistoryForDict()
+            }
+        }
+    }
+
+    // MARK: - 加载练习历史
+
+    /// 加载同一个字的所有练习记录（用于 writing_practice 类型）
+    private func loadPracticeHistory() async {
+        guard let character = note.query, !character.isEmpty else { return }
+
+        await viewModel.loadReadingNotes()
+        let allNotes = viewModel.readingNotes
+
+        // 筛选同一个字的练习记录，按时间倒序
+        let history = allNotes
+            .filter { $0.sourceType == "writing_practice" && $0.query == character }
+            .sorted { parseDate($0.createdAt) > parseDate($1.createdAt) }
+
+        await MainActor.run {
+            practiceHistory = history
+            // 找到当前笔记在历史中的位置
+            if let index = history.firstIndex(where: { $0.id == note.id }) {
+                currentHistoryIndex = index
+            }
+        }
+    }
+
+    /// 加载生词的练习记录（用于 dict 类型）
+    private func loadPracticeHistoryForDict() async {
+        guard let character = note.query, !character.isEmpty else { return }
+
+        await viewModel.loadReadingNotes()
+        let allNotes = viewModel.readingNotes
+
+        // 筛选该字的所有练习记录
+        let history = allNotes
+            .filter { $0.sourceType == "writing_practice" && $0.query == character }
+            .sorted { parseDate($0.createdAt) > parseDate($1.createdAt) }
+
+        await MainActor.run {
+            practiceHistory = history
+        }
+    }
+
+    private func parseDate(_ dateString: String?) -> Date {
+        guard let str = dateString else { return Date.distantPast }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: str) ?? Date.distantPast
+    }
+
+    // MARK: - AI评价数据加载
+
+    private func loadEvaluationStatus() async {
+        await loadEvaluationForNote(currentPracticeNote)
+    }
+
+    /// 为指定笔记加载评价状态
+    private func loadEvaluationForNote(_ targetNote: ReadingNote) async {
+        isLoadingEvaluation = true
+        defer { isLoadingEvaluation = false }
+
+        do {
+            let status = try await WritingEvaluationService.shared.getStatus(noteId: targetNote.id)
+            canAnalyze = status.canAnalyze
+            remainingHours = status.remainingHours ?? 0
+
+            if status.hasEvaluation {
+                evaluation = try await WritingEvaluationService.shared.getEvaluation(noteId: targetNote.id)
+            } else {
+                evaluation = nil
+            }
+        } catch {
+            print("加载评价状态失败: \(error)")
+            evaluation = nil
+        }
+    }
+
+    private func startAnalysis() async {
+        guard let strokeData = parseStrokeData(from: currentPracticeNote) else {
+            evaluationError = "无法解析笔画数据"
+            return
+        }
+
+        isAnalyzing = true
+        defer { isAnalyzing = false }
+
+        do {
+            let character = currentPracticeNote.query ?? strokeData.character ?? ""
+            let preview = WritingEvaluationService.shared.generatePreviewImage(
+                strokeData: strokeData,
+                size: CGSize(width: 400, height: 400),
+                backgroundColor: .white
+            )
+
+            evaluation = try await WritingEvaluationService.shared.analyze(
+                noteId: currentPracticeNote.id,
+                character: character,
+                strokeData: strokeData,
+                renderedImage: preview
+            )
+            canAnalyze = false
+        } catch {
+            evaluationError = error.localizedDescription
+        }
+    }
+
+    private func parseStrokeData() -> StrokeData? {
+        return parseStrokeData(from: currentPracticeNote)
+    }
+
+    private func parseStrokeData(from targetNote: ReadingNote) -> StrokeData? {
+        guard let content = targetNote.content else { return nil }
+
+        if let dict = content.value as? [String: Any],
+           let jsonData = try? JSONSerialization.data(withJSONObject: dict),
+           let json = String(data: jsonData, encoding: .utf8) {
+            return StrokeData.fromJSON(json)
+        }
+
+        if let jsonString = content.value as? String {
+            return StrokeData.fromJSON(jsonString)
+        }
+
+        return nil
     }
 
     // MARK: - 笔记内容区域（根据类型渲染）
@@ -104,6 +288,8 @@ struct NoteFocusView: View {
                     practiceFocusContent
                 case "solving":
                     solvingFocusContent
+                case "writing_practice":
+                    writingPracticeFocusContent
                 default:
                     defaultFocusContent
                 }
@@ -230,7 +416,309 @@ struct NoteFocusView: View {
                 .background(Color(.systemGray6))
                 .cornerRadius(16)
             }
+
+            // 练习记录（从生词进入时显示该字的所有练习）
+            if !practiceHistory.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "pencil.line")
+                            .foregroundColor(.teal)
+                        Text("书写练习记录")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Text("\(practiceHistory.count) 次")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    // 练习记录列表
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 16) {
+                            ForEach(Array(practiceHistory.enumerated()), id: \.element.id) { index, practiceNote in
+                                PracticeHistoryCard(
+                                    note: practiceNote,
+                                    index: practiceHistory.count - index,
+                                    onTap: {
+                                        // 点击查看详情
+                                        practiceDetailNote = practiceNote
+                                    }
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(16)
+            }
         }
+    }
+
+    // MARK: - 书写练习专注内容
+
+    private var writingPracticeFocusContent: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            // 顶部：字符和AI评分
+            HStack(alignment: .top, spacing: 16) {
+                // 练习的字
+                if let query = currentPracticeNote.query, !query.isEmpty {
+                    VStack(spacing: 8) {
+                        MiTianGridView(
+                            character: query,
+                            gridType: .mi,
+                            size: 100
+                        )
+
+                        Text(query)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                // AI评价区域
+                evaluationStatusView
+            }
+
+            // 练习记录选择器（多次练习时显示）
+            if practiceHistory.count > 1 {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("练习记录")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        Text("\(currentHistoryIndex + 1) / \(practiceHistory.count) 次")
+                            .font(.caption)
+                            .foregroundColor(.appPrimary)
+                    }
+
+                    // 切换按钮
+                    HStack(spacing: 12) {
+                        Button {
+                            if currentHistoryIndex < practiceHistory.count - 1 {
+                                withAnimation {
+                                    currentHistoryIndex += 1
+                                }
+                                // 切换后重新加载评价
+                                Task {
+                                    await loadEvaluationForNote(practiceHistory[currentHistoryIndex])
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.left")
+                                Text("更早")
+                            }
+                            .font(.caption)
+                            .foregroundColor(currentHistoryIndex < practiceHistory.count - 1 ? .appPrimary : .secondary)
+                        }
+                        .disabled(currentHistoryIndex >= practiceHistory.count - 1)
+
+                        Spacer()
+
+                        // 时间标签
+                        Text(currentPracticeNote.createdAt?.relativeDescription ?? "")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        Button {
+                            if currentHistoryIndex > 0 {
+                                withAnimation {
+                                    currentHistoryIndex -= 1
+                                }
+                                // 切换后重新加载评价
+                                Task {
+                                    await loadEvaluationForNote(practiceHistory[currentHistoryIndex])
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("更新")
+                                Image(systemName: "chevron.right")
+                            }
+                            .font(.caption)
+                            .foregroundColor(currentHistoryIndex > 0 ? .appPrimary : .secondary)
+                        }
+                        .disabled(currentHistoryIndex <= 0)
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
+            }
+
+            // 书写渲染（使用当前选中的练习记录）
+            if let strokeData = parseStrokeData(from: currentPracticeNote) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("我的书写")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    HStack {
+                        Spacer()
+                        // 带米字格背景的书写渲染
+                        ZStack {
+                            // 米字格背景
+                            MiTianGridBackground(size: 280)
+
+                            // 笔画渲染
+                            StrokeRendererView(
+                                content: strokeData,
+                                maxWidth: 260,
+                                maxHeight: 260,
+                                backgroundColor: .clear,
+                                showPlayback: true
+                            )
+                        }
+                        .frame(width: 280, height: 280)
+                        .background(Color(hex: "FDF5E6"))
+                        .cornerRadius(12)
+                        .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+                        Spacer()
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(16)
+            }
+
+            // 评价详情预览（如果有评价）
+            if let evaluation = evaluation {
+                evaluationPreviewCard(evaluation)
+            }
+        }
+    }
+
+    /// AI评价状态视图
+    private var evaluationStatusView: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            if isLoadingEvaluation {
+                ProgressView()
+                    .scaleEffect(0.8)
+            } else if let evaluation = evaluation {
+                // 教师批改风格的分数显示
+                Button {
+                    showEvaluationDetail = true
+                } label: {
+                    ZStack {
+                        // 红圈
+                        Circle()
+                            .stroke(Color.red, lineWidth: 3)
+                            .frame(width: 60, height: 60)
+
+                        // 分数
+                        Text("\(evaluation.overallScore)")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundColor(.red)
+                    }
+                    .rotationEffect(.degrees(-8))
+                }
+
+                Text(evaluation.levelText)
+                    .font(.caption)
+                    .foregroundColor(evaluation.levelColor)
+            } else {
+                // 未评分状态
+                VStack(spacing: 6) {
+                    Text("未评分")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Button {
+                        showAnalyzeConfirm = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            if isAnalyzing {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            } else {
+                                Image(systemName: "sparkles")
+                            }
+                            Text("AI分析")
+                        }
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(canAnalyze ? Color.purple : Color.gray)
+                        .cornerRadius(14)
+                    }
+                    .disabled(!canAnalyze || isAnalyzing)
+
+                    if !canAnalyze && remainingHours > 0 {
+                        Text("\(remainingHours)h后可重新分析")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 评价预览卡片
+    private func evaluationPreviewCard(_ evaluation: WritingEvaluation) -> some View {
+        Button {
+            showEvaluationDetail = true
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "sparkles")
+                        .foregroundColor(.purple)
+                    Text("AI书写评价")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                // 各维度简要
+                if let dimensions = evaluation.dimensions {
+                    HStack(spacing: 12) {
+                        ForEach(Array(dimensions.prefix(3)), id: \.name) { dim in
+                            VStack(spacing: 4) {
+                                Text("\(dim.score)")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(scoreColor(dim.score))
+                                Text(dim.displayName)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+
+                // 鼓励语
+                if let encouragement = evaluation.encouragement, !encouragement.isEmpty {
+                    Text(encouragement)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            .padding()
+            .background(Color.purple.opacity(0.08))
+            .cornerRadius(16)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func scoreColor(_ score: Int) -> Color {
+        if score >= 90 { return .green }
+        if score >= 70 { return .orange }
+        return .red
     }
 
     // MARK: - 练习题专注内容（可交互 WebView）
@@ -1129,6 +1617,311 @@ struct FocusInteractivePracticeView: UIViewRepresentable {
         </body>
         </html>
         """
+    }
+}
+
+// MARK: - AI评价详情Sheet
+
+struct EvaluationDetailSheet: View {
+    let evaluation: WritingEvaluation
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // 综合评分
+                    scoreSection
+
+                    // 各维度评分
+                    if let dimensions = evaluation.dimensions, !dimensions.isEmpty {
+                        dimensionsSection(dimensions)
+                    }
+
+                    // 改进建议
+                    if let suggestions = evaluation.suggestions, !suggestions.isEmpty {
+                        suggestionsSection(suggestions)
+                    }
+
+                    // 鼓励语
+                    if let encouragement = evaluation.encouragement, !encouragement.isEmpty {
+                        encouragementSection(encouragement)
+                    }
+                }
+                .padding()
+            }
+            .navigationTitle("书写评价详情")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("返回")
+                        }
+                        .foregroundColor(.appPrimary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var scoreSection: some View {
+        VStack(spacing: 16) {
+            // 教师批改风格的大分数
+            ZStack {
+                Circle()
+                    .stroke(Color.red, lineWidth: 4)
+                    .frame(width: 120, height: 120)
+
+                Text("\(evaluation.overallScore)")
+                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                    .foregroundColor(.red)
+            }
+            .rotationEffect(.degrees(-8))
+
+            Text(evaluation.levelText)
+                .font(.title3)
+                .fontWeight(.semibold)
+                .foregroundColor(evaluation.levelColor)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+        .background(Color(.systemGray6))
+        .cornerRadius(20)
+    }
+
+    private func dimensionsSection(_ dimensions: [WritingDimension]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("各维度评分")
+                .font(.headline)
+
+            ForEach(dimensions, id: \.name) { dim in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(dim.displayName)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Spacer()
+                        Text("\(dim.score)分")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(scoreColor(dim.score))
+                    }
+
+                    // 进度条
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color(.systemGray5))
+                                .frame(height: 8)
+
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(scoreColor(dim.score))
+                                .frame(width: geometry.size.width * CGFloat(dim.score) / 100, height: 8)
+                        }
+                    }
+                    .frame(height: 8)
+
+                    if let comment = dim.comment, !comment.isEmpty {
+                        Text(comment)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
+            }
+        }
+    }
+
+    private func suggestionsSection(_ suggestions: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "lightbulb.fill")
+                    .foregroundColor(.orange)
+                Text("改进建议")
+                    .font(.headline)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(Array(suggestions.enumerated()), id: \.offset) { index, suggestion in
+                    HStack(alignment: .top, spacing: 12) {
+                        Text("\(index + 1)")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .frame(width: 20, height: 20)
+                            .background(Color.orange)
+                            .cornerRadius(10)
+
+                        Text(suggestion)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                    }
+                }
+            }
+            .padding()
+            .background(Color.orange.opacity(0.1))
+            .cornerRadius(12)
+        }
+    }
+
+    private func encouragementSection(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "heart.fill")
+                    .foregroundColor(.pink)
+                Text("老师的话")
+                    .font(.headline)
+            }
+
+            Text(text)
+                .font(.body)
+                .foregroundColor(.primary)
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.pink.opacity(0.1))
+                .cornerRadius(12)
+        }
+    }
+
+    private func scoreColor(_ score: Int) -> Color {
+        if score >= 90 { return .green }
+        if score >= 70 { return .orange }
+        return .red
+    }
+}
+
+// MARK: - 练习历史卡片
+
+private struct PracticeHistoryCard: View {
+    let note: ReadingNote
+    let index: Int
+    let onTap: () -> Void
+
+    @State private var previewImage: UIImage?
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 6) {
+                // 书写预览
+                ZStack {
+                    // 背景
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(hex: "FDF5E6"))
+                        .frame(width: 80, height: 80)
+
+                    if let image = previewImage {
+                        // 使用预览图
+                        Image(uiImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 72, height: 72)
+                    } else if let strokeData = parseStrokeData(from: note), !strokeData.strokes.isEmpty {
+                        // 使用笔画渲染
+                        StrokeRendererView(
+                            content: strokeData,
+                            maxWidth: 72,
+                            maxHeight: 72,
+                            backgroundColor: .clear,
+                            showPlayback: false
+                        )
+                    } else {
+                        // 空状态
+                        Image(systemName: "pencil.line")
+                            .font(.system(size: 24))
+                            .foregroundColor(.secondary.opacity(0.4))
+                    }
+                }
+                .frame(width: 80, height: 80)
+                .cornerRadius(8)
+                .shadow(color: .black.opacity(0.08), radius: 2, x: 0, y: 1)
+
+                // 第几次
+                Text("第\(index)次")
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+
+                // 时间
+                Text(note.createdAt?.shortDescription ?? "")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .padding(6)
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color(.systemGray4), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .onAppear {
+            loadPreviewImage()
+        }
+    }
+
+    /// 加载预览图
+    private func loadPreviewImage() {
+        guard let content = note.content else { return }
+
+        var previewBase64: String?
+
+        if let dict = content.value as? [String: Any] {
+            previewBase64 = dict["preview"] as? String
+        } else if let jsonString = content.value as? String,
+                  let data = jsonString.data(using: .utf8),
+                  let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            previewBase64 = dict["preview"] as? String
+        }
+
+        if let base64 = previewBase64 {
+            let cleanBase64 = base64
+                .replacingOccurrences(of: "data:image/png;base64,", with: "")
+                .replacingOccurrences(of: "data:image/webp;base64,", with: "")
+                .replacingOccurrences(of: "data:image/jpeg;base64,", with: "")
+
+            if let imageData = Data(base64Encoded: cleanBase64),
+               let image = UIImage(data: imageData) {
+                previewImage = image
+            }
+        }
+    }
+
+    private func parseStrokeData(from targetNote: ReadingNote) -> StrokeData? {
+        guard let content = targetNote.content else { return nil }
+
+        if let dict = content.value as? [String: Any],
+           let jsonData = try? JSONSerialization.data(withJSONObject: dict),
+           let json = String(data: jsonData, encoding: .utf8) {
+            return StrokeData.fromJSON(json)
+        }
+
+        if let jsonString = content.value as? String {
+            return StrokeData.fromJSON(jsonString)
+        }
+
+        return nil
+    }
+}
+
+// MARK: - Date Extension for short description
+
+private extension String {
+    var shortDescription: String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = formatter.date(from: self) else { return "" }
+
+        let displayFormatter = DateFormatter()
+        displayFormatter.dateFormat = "MM/dd"
+        return displayFormatter.string(from: date)
     }
 }
 

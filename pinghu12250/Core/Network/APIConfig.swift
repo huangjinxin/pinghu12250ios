@@ -144,8 +144,23 @@ enum APIConfig {
         static let diaryAnalysisSave = "/ai-analysis/diary/save"
         static let diaryAnalysisHistory = "/ai-analysis/diary/history"
 
+        // 日记游戏化
+        static let diaryGameStats = "/diary-game/stats"
+        static let diaryGameAchievements = "/diary-game/achievements"
+        static let diaryGameAchievementsStats = "/diary-game/achievements/stats"
+        static let diaryGameConfig = "/diary-game/config"
+        static let diaryGameOverview = "/diary-game/overview"
+
         // 字典
         static let dict = "/dict"  // + /{char}
+
+        // 书写评价
+        static let writingEvaluation = "/writing-evaluation"  // + /{noteId}/status, /{noteId}, /analyze
+
+        // 公开接口
+        static let unifiedFeed = "/public/unified-feed"
+        static let worksFeed = "/public/works-feed"
+        static let leaderboard = "/public/leaderboard"
     }
 
     // MARK: - 请求超时

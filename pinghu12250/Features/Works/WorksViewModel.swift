@@ -56,10 +56,28 @@ class WorksViewModel: ObservableObject {
     @Published var marketSortBy: String = "latest"  // latest, popular, price_asc, price_desc
     @Published var marketCategory: String = "all"  // all, free, paid, exclusive
 
-    // MARK: - 分页
+    // MARK: - 分页（每个 Tab 独立）
 
-    @Published var currentPage: Int = 1
     @Published var pageSize: Int = 18
+
+    // 画廊分页
+    @Published var galleryPage: Int = 1
+    @Published var galleryHasMore: Bool = true
+
+    // 朗诵分页
+    @Published var recitationPage: Int = 1
+    @Published var recitationHasMore: Bool = true
+
+    // 唐诗宋词分页
+    @Published var poetryPage: Int = 1
+    @Published var poetryHasMore: Bool = true
+
+    // 购物分页
+    @Published var marketPage: Int = 1
+    @Published var marketHasMore: Bool = true
+
+    // 兼容旧代码（已废弃，请使用各 Tab 独立的分页状态）
+    @Published var currentPage: Int = 1
     @Published var hasMore: Bool = true
 
     // MARK: - 状态
@@ -91,17 +109,17 @@ class WorksViewModel: ObservableObject {
 
     func loadGalleryWorks(refresh: Bool = false) async {
         if refresh {
-            currentPage = 1
-            hasMore = true
+            galleryPage = 1
+            galleryHasMore = true
         }
 
-        guard hasMore else { return }
+        guard galleryHasMore else { return }
         isLoadingGallery = true
         defer { isLoadingGallery = false }
 
         do {
             var params: [String: String] = [
-                "page": "\(currentPage)",
+                "page": "\(galleryPage)",
                 "pageSize": "\(pageSize)"
             ]
 
@@ -124,12 +142,12 @@ class WorksViewModel: ObservableObject {
             }
 
             if let pagination = response.pagination {
-                hasMore = currentPage < pagination.totalPages
+                galleryHasMore = galleryPage < pagination.totalPages
             } else {
-                hasMore = response.works.count >= pageSize
+                galleryHasMore = response.works.count >= pageSize
             }
 
-            currentPage += 1
+            galleryPage += 1
         } catch {
             #if DEBUG
             print("加载画廊失败: \(error)")
@@ -167,17 +185,17 @@ class WorksViewModel: ObservableObject {
 
     func loadRecitationWorks(refresh: Bool = false) async {
         if refresh {
-            currentPage = 1
-            hasMore = true
+            recitationPage = 1
+            recitationHasMore = true
         }
 
-        guard hasMore else { return }
+        guard recitationHasMore else { return }
         isLoadingRecitation = true
         defer { isLoadingRecitation = false }
 
         do {
             let params: [String: String] = [
-                "page": "\(currentPage)",
+                "page": "\(recitationPage)",
                 "pageSize": "\(pageSize)"
             ]
 
@@ -193,12 +211,12 @@ class WorksViewModel: ObservableObject {
             }
 
             if let pagination = response.pagination {
-                hasMore = currentPage < pagination.totalPages
+                recitationHasMore = recitationPage < pagination.totalPages
             } else {
-                hasMore = response.works.count >= pageSize
+                recitationHasMore = response.works.count >= pageSize
             }
 
-            currentPage += 1
+            recitationPage += 1
         } catch {
             #if DEBUG
             print("加载朗诵失败: \(error)")
@@ -233,16 +251,19 @@ class WorksViewModel: ObservableObject {
 
     func loadPoetryWorks(refresh: Bool = false) async {
         if refresh {
-            currentPage = 1
-            hasMore = true
+            poetryPage = 1
+            poetryHasMore = true
         }
 
-        guard hasMore else { return }
+        guard poetryHasMore else { return }
         isLoadingPoetry = true
         defer { isLoadingPoetry = false }
 
-        // 如果离线模式，先尝试从缓存加载
-        if offlineManager.shouldUseOfflineData {
+        // 如果是刷新操作且在线，强制从网络加载
+        // 只有在非刷新且离线模式时才使用缓存
+        let shouldUseCacheFirst = !refresh && offlineManager.shouldUseOfflineData
+
+        if shouldUseCacheFirst {
             if let cachedData: [PoetryWorkData] = cacheService.getCachedPoetryList(type: [PoetryWorkData].self) {
                 poetryWorks = cachedData
                 cachedPoetryIds = Set(cachedData.map { $0.id })
@@ -250,10 +271,10 @@ class WorksViewModel: ObservableObject {
             }
         }
 
-        // 在线模式从网络加载
+        // 从网络加载
         do {
             var params: [String: String] = [
-                "page": "\(currentPage)",
+                "page": "\(poetryPage)",
                 "pageSize": "\(pageSize)",
                 "sort": poetrySortBy
             ]
@@ -265,7 +286,15 @@ class WorksViewModel: ObservableObject {
             let queryString = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
             let endpoint = "\(APIConfig.Endpoints.poetryPublic)?\(queryString)"
 
+            #if DEBUG
+            print("🌐 加载唐诗宋词: \(endpoint)")
+            #endif
+
             let response: PoetryResponse = try await APIService.shared.get(endpoint)
+
+            #if DEBUG
+            print("✅ 唐诗宋词加载成功: \(response.works.count) 条")
+            #endif
 
             if refresh {
                 poetryWorks = response.works
@@ -274,26 +303,26 @@ class WorksViewModel: ObservableObject {
             }
 
             if let pagination = response.pagination {
-                hasMore = currentPage < pagination.totalPages
+                poetryHasMore = poetryPage < pagination.totalPages
             } else {
-                hasMore = response.works.count >= pageSize
+                poetryHasMore = response.works.count >= pageSize
             }
 
-            currentPage += 1
+            poetryPage += 1
 
             // 自动缓存第一页数据
-            if currentPage == 2 && refresh {
+            if poetryPage == 2 && refresh {
                 try? cacheService.cachePoetryList(data: poetryWorks)
             }
         } catch {
+            #if DEBUG
+            print("❌ 加载唐诗宋词失败: \(error)")
+            #endif
             // 网络失败时尝试从缓存加载
             if let cachedData: [PoetryWorkData] = cacheService.getCachedPoetryList(type: [PoetryWorkData].self) {
                 poetryWorks = cachedData
                 cachedPoetryIds = Set(cachedData.map { $0.id })
             }
-            #if DEBUG
-            print("加载唐诗宋词失败: \(error)")
-            #endif
         }
     }
 
@@ -371,17 +400,17 @@ class WorksViewModel: ObservableObject {
 
     func loadMarketWorks(refresh: Bool = false) async {
         if refresh {
-            currentPage = 1
-            hasMore = true
+            marketPage = 1
+            marketHasMore = true
         }
 
-        guard hasMore else { return }
+        guard marketHasMore else { return }
         isLoadingMarket = true
         defer { isLoadingMarket = false }
 
         do {
             var params: [String: String] = [
-                "page": "\(currentPage)",
+                "page": "\(marketPage)",
                 "pageSize": "\(pageSize)",
                 "sort": marketSortBy
             ]
@@ -402,12 +431,12 @@ class WorksViewModel: ObservableObject {
             }
 
             if let pagination = response.pagination {
-                hasMore = currentPage < pagination.totalPages
+                marketHasMore = marketPage < pagination.totalPages
             } else {
-                hasMore = response.works.count >= pageSize
+                marketHasMore = response.works.count >= pageSize
             }
 
-            currentPage += 1
+            marketPage += 1
         } catch {
             #if DEBUG
             print("加载市场失败: \(error)")
@@ -502,6 +531,16 @@ class WorksViewModel: ObservableObject {
     // MARK: - 重置分页
 
     func resetPagination() {
+        // 重置所有分页状态
+        galleryPage = 1
+        galleryHasMore = true
+        recitationPage = 1
+        recitationHasMore = true
+        poetryPage = 1
+        poetryHasMore = true
+        marketPage = 1
+        marketHasMore = true
+        // 兼容旧代码
         currentPage = 1
         hasMore = true
     }
