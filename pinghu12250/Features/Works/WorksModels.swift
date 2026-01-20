@@ -45,6 +45,10 @@ struct WorkAuthor: Codable {
     var avatarLetter: String {
         String((nickname ?? username).prefix(1))
     }
+
+    enum CodingKeys: String, CodingKey {
+        case id, username, nickname, avatar
+    }
 }
 
 // MARK: - 画廊作品
@@ -177,6 +181,17 @@ struct PoetryWorkData: Codable, Identifiable {
     let author: WorkAuthor?
     let likesCount: Int?
 
+    enum CodingKeys: String, CodingKey {
+        case id, title, status, author
+        case htmlCode = "htmlCode"
+        case coverImage = "coverImage"
+        case reviewReason = "reviewReason"
+        case createdAt = "createdAt"
+        case updatedAt = "updatedAt"
+        case authorId = "authorId"
+        case likesCount = "likesCount"
+    }
+
     var isApproved: Bool {
         status == "APPROVED"
     }
@@ -308,4 +323,213 @@ struct LeaderboardEntry: Codable, Identifiable {
 
 struct LeaderboardResponse: Decodable {
     let entries: [LeaderboardEntry]
+}
+
+// MARK: - 公开日记分析（作品广场）
+
+/// 日记快照（用于显示日记标题）- 本地定义避免命名冲突
+struct WorksDiarySnapshot: Codable {
+    let title: String?
+    let content: String?
+    let mood: String?
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title, content, mood
+        case createdAt = "createdAt"
+    }
+}
+
+/// 日记快照值（支持单个对象或数组）
+enum DiarySnapshotValue: Codable {
+    case single(WorksDiarySnapshot)
+    case array([WorksDiarySnapshot])
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let array = try? container.decode([WorksDiarySnapshot].self) {
+            self = .array(array)
+        } else if let single = try? container.decode(WorksDiarySnapshot.self) {
+            self = .single(single)
+        } else {
+            throw DecodingError.typeMismatch(
+                DiarySnapshotValue.self,
+                DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Expected WorksDiarySnapshot or [WorksDiarySnapshot]")
+            )
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .single(let snapshot):
+            try container.encode(snapshot)
+        case .array(let snapshots):
+            try container.encode(snapshots)
+        }
+    }
+}
+
+struct PublicDiaryAnalysisItem: Codable, Identifiable {
+    let id: String
+    let userId: String?
+    let isBatch: Bool
+    let period: String?
+    let diaryId: String?
+    let diaryIds: [String]?
+    let diaryCount: Int?
+    let diarySnapshot: DiarySnapshotValue?  // 日记快照（可能是单个或数组）
+    let analysis: String
+    let modelName: String?
+    let tokensUsed: Int?
+    let responseTime: Int?
+    let createdAt: String?
+    let user: PublicDiaryAuthor?
+
+    enum CodingKeys: String, CodingKey {
+        case id, period, analysis, user
+        case userId = "userId"
+        case isBatch = "isBatch"
+        case diaryId = "diaryId"
+        case diaryIds = "diaryIds"
+        case diaryCount = "diaryCount"
+        case diarySnapshot = "diarySnapshot"
+        case modelName = "modelName"
+        case tokensUsed = "tokensUsed"
+        case responseTime = "responseTime"
+        case createdAt = "createdAt"
+    }
+
+    /// 获取日记标题（参考 Web 端 getDiaryTitle 逻辑）
+    var diaryTitle: String {
+        guard let snapshot = diarySnapshot else { return "日记分析" }
+        switch snapshot {
+        case .single(let diary):
+            return diary.title ?? "无标题日记"
+        case .array(let diaries):
+            if diaries.isEmpty { return "日记分析" }
+            if diaries.count == 1 { return diaries[0].title ?? "无标题日记" }
+            return "\(diaries[0].title ?? "无标题")等\(diaries.count)篇"
+        }
+    }
+
+    /// 获取分析预览（前100字符）
+    var analysisPreview: String {
+        let text = analysis
+            .replacingOccurrences(of: "[#*`>\\[\\]()]", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "\n+", with: " ", options: .regularExpression)
+        if text.count <= 100 { return text }
+        return String(text.prefix(100)) + "..."
+    }
+
+    var displayTitle: String {
+        if isBatch {
+            if let period = period {
+                return "\(period) 周分析"
+            }
+            return "批量分析 (\(diaryCount ?? 0)篇)"
+        }
+        return "单篇分析"
+    }
+
+    var analysisTypeLabel: String {
+        isBatch ? "周分析" : "单篇"
+    }
+
+    var relativeTime: String {
+        guard let createdAt = createdAt else { return "" }
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var date = isoFormatter.date(from: createdAt)
+        if date == nil {
+            isoFormatter.formatOptions = [.withInternetDateTime]
+            date = isoFormatter.date(from: createdAt)
+        }
+        guard let parsedDate = date else { return "" }
+
+        let now = Date()
+        let interval = now.timeIntervalSince(parsedDate)
+
+        if interval < 60 { return "刚刚" }
+        if interval < 3600 { return "\(Int(interval / 60))分钟前" }
+        if interval < 86400 { return "\(Int(interval / 3600))小时前" }
+        if interval < 604800 { return "\(Int(interval / 86400))天前" }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM-dd"
+        return formatter.string(from: parsedDate)
+    }
+}
+
+struct PublicDiaryAuthor: Codable {
+    let id: String
+    let name: String?
+    let username: String?
+    let avatar: String?
+    let profile: PublicDiaryProfile?
+
+    var displayName: String {
+        name ?? profile?.nickname ?? username ?? "匿名"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, username, avatar, profile
+    }
+}
+
+struct PublicDiaryProfile: Codable {
+    let nickname: String?
+}
+
+struct PublicDiaryAnalysisResponse: Decodable {
+    let records: [PublicDiaryAnalysisItem]
+    let pagination: PaginationInfo?
+    let authors: [PublicDiaryAuthor]?
+}
+
+// MARK: - 创意作品（动态栏目）
+
+struct CreativeWorkItem: Codable, Identifiable {
+    let id: String
+    let title: String
+    let content: String?
+    let coverImage: String?
+    let category: String?
+    let status: String?
+    let likesCount: Int?
+    let createdAt: String?
+    let author: WorkAuthor?
+
+    var fullCoverImageURL: String? {
+        buildFullURL(coverImage)
+    }
+
+    var relativeTime: String {
+        guard let createdAt = createdAt else { return "" }
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var date = isoFormatter.date(from: createdAt)
+        if date == nil {
+            isoFormatter.formatOptions = [.withInternetDateTime]
+            date = isoFormatter.date(from: createdAt)
+        }
+        guard let parsedDate = date else { return "" }
+
+        let now = Date()
+        let interval = now.timeIntervalSince(parsedDate)
+
+        if interval < 60 { return "刚刚" }
+        if interval < 3600 { return "\(Int(interval / 60))分钟前" }
+        if interval < 86400 { return "\(Int(interval / 3600))小时前" }
+        if interval < 604800 { return "\(Int(interval / 86400))天前" }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM-dd"
+        return formatter.string(from: parsedDate)
+    }
+}
+
+struct CreativeWorksResponse: Decodable {
+    let works: [CreativeWorkItem]
+    let pagination: PaginationInfo?
 }

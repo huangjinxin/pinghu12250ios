@@ -37,12 +37,11 @@ class WorksViewModel: ObservableObject {
 
     @Published var poetryWorks: [PoetryWorkData] = []
     @Published var isLoadingPoetry = false
-    @Published var poetrySortBy: String = "latest"  // latest, popular
+    @Published var poetryRefreshError: String?
+    @Published var poetrySortBy: String = "latest"
     @Published var poetrySearchText: String = ""
-    @Published var cachedPoetryIds: Set<String> = []
+    @Published var poetryRefreshId: UUID = UUID()
     private var likedPoetryIds: Set<String> = []
-    private let cacheService = CacheService.shared
-    private let offlineManager = OfflineManager.shared
 
     // MARK: - 购物数据
 
@@ -55,6 +54,21 @@ class WorksViewModel: ObservableObject {
     @Published var isLoadingQR = false
     @Published var marketSortBy: String = "latest"  // latest, popular, price_asc, price_desc
     @Published var marketCategory: String = "all"  // all, free, paid, exclusive
+
+    // MARK: - 公开日记分析数据（作品广场语义）
+
+    @Published var publicDiaryAnalysis: [PublicDiaryAnalysisItem] = []
+    @Published var isLoadingPublicDiaryAnalysis = false
+    @Published var publicDiaryAnalysisPage: Int = 1
+    @Published var publicDiaryAnalysisHasMore: Bool = true
+    @Published var diaryAnalysisRefreshId: UUID = UUID()  // 强制刷新标识符
+
+    // MARK: - 创意作品数据（动态栏目）
+
+    @Published var creativeWorks: [CreativeWorkItem] = []
+    @Published var isLoadingCreativeWorks = false
+    @Published var creativeWorksPage: Int = 1
+    @Published var creativeWorksHasMore: Bool = true
 
     // MARK: - 分页（每个 Tab 独立）
 
@@ -253,29 +267,18 @@ class WorksViewModel: ObservableObject {
         if refresh {
             poetryPage = 1
             poetryHasMore = true
+            poetryRefreshError = nil
         }
 
         guard poetryHasMore else { return }
         isLoadingPoetry = true
         defer { isLoadingPoetry = false }
 
-        // 如果是刷新操作且在线，强制从网络加载
-        // 只有在非刷新且离线模式时才使用缓存
-        let shouldUseCacheFirst = !refresh && offlineManager.shouldUseOfflineData
-
-        if shouldUseCacheFirst {
-            if let cachedData: [PoetryWorkData] = cacheService.getCachedPoetryList(type: [PoetryWorkData].self) {
-                poetryWorks = cachedData
-                cachedPoetryIds = Set(cachedData.map { $0.id })
-                return
-            }
-        }
-
-        // 从网络加载
+        // 从网络加载（参数与 Web 端保持一致）
         do {
             var params: [String: String] = [
                 "page": "\(poetryPage)",
-                "pageSize": "\(pageSize)",
+                "limit": "\(pageSize)",  // 与后端参数名一致
                 "sort": poetrySortBy
             ]
 
@@ -287,17 +290,23 @@ class WorksViewModel: ObservableObject {
             let endpoint = "\(APIConfig.Endpoints.poetryPublic)?\(queryString)"
 
             #if DEBUG
-            print("🌐 加载唐诗宋词: \(endpoint)")
+            print("🌐 加载唐诗宋词: \(APIConfig.baseURL)\(endpoint)")
             #endif
 
             let response: PoetryResponse = try await APIService.shared.get(endpoint)
 
             #if DEBUG
-            print("✅ 唐诗宋词加载成功: \(response.works.count) 条")
+            print("✅ 唐诗宋词加载成功: \(response.works.count) 条, refresh=\(refresh)")
+            for (index, work) in response.works.prefix(3).enumerated() {
+                print("  [\(index)] id=\(work.id), title=\(work.title)")
+            }
             #endif
 
+            // 刷新时完全替换数据，确保显示最新内容
             if refresh {
                 poetryWorks = response.works
+                poetryRefreshError = nil  // 清除之前的错误
+                poetryRefreshId = UUID()  // 更新刷新标识符，强制 SwiftUI 重新渲染
             } else {
                 poetryWorks.append(contentsOf: response.works)
             }
@@ -309,54 +318,14 @@ class WorksViewModel: ObservableObject {
             }
 
             poetryPage += 1
-
-            // 自动缓存第一页数据
-            if poetryPage == 2 && refresh {
-                try? cacheService.cachePoetryList(data: poetryWorks)
-            }
         } catch {
             #if DEBUG
             print("❌ 加载唐诗宋词失败: \(error)")
-            #endif
-            // 网络失败时尝试从缓存加载
-            if let cachedData: [PoetryWorkData] = cacheService.getCachedPoetryList(type: [PoetryWorkData].self) {
-                poetryWorks = cachedData
-                cachedPoetryIds = Set(cachedData.map { $0.id })
+            if case let APIError.decodingError(decodingError) = error {
+                print("  解码错误详情: \(decodingError)")
             }
-        }
-    }
-
-    /// 缓存单个诗词供离线使用
-    func cachePoetryForOffline(_ poetry: PoetryWorkData) async {
-        do {
-            try cacheService.cachePoetry(poetryId: poetry.id, data: poetry)
-            cachedPoetryIds.insert(poetry.id)
-        } catch {
-            #if DEBUG
-            print("缓存诗词失败: \(error)")
             #endif
-        }
-    }
-
-    /// 缓存诗词（简化调用）
-    func cachePoetry(_ poetry: PoetryWorkData) async {
-        await cachePoetryForOffline(poetry)
-    }
-
-    /// 检查诗词是否已缓存
-    func isPoetryCached(_ poetryId: String) -> Bool {
-        cacheService.isPoetryCached(poetryId: poetryId)
-    }
-
-    /// 获取缓存的诗词
-    func getCachedPoetry(_ poetryId: String) -> PoetryWorkData? {
-        cacheService.getCachedPoetry(poetryId: poetryId, type: PoetryWorkData.self)
-    }
-
-    /// 批量缓存诗词
-    func cacheAllPoetryForOffline() async {
-        for poetry in poetryWorks {
-            await cachePoetryForOffline(poetry)
+            poetryRefreshError = "加载失败，请检查网络"
         }
     }
 
@@ -528,6 +497,115 @@ class WorksViewModel: ObservableObject {
         }
     }
 
+    // MARK: - 公开日记分析 API（作品广场语义）
+
+    func loadPublicDiaryAnalysis(refresh: Bool = false) async {
+        if refresh {
+            publicDiaryAnalysisPage = 1
+            publicDiaryAnalysisHasMore = true
+        }
+
+        guard publicDiaryAnalysisHasMore else { return }
+        isLoadingPublicDiaryAnalysis = true
+        defer { isLoadingPublicDiaryAnalysis = false }
+
+        do {
+            let endpoint = "\(APIConfig.Endpoints.diaryAnalysisPublic)?page=\(publicDiaryAnalysisPage)&limit=\(pageSize)"
+
+            #if DEBUG
+            print("🌐 加载公开日记分析: \(APIConfig.baseURL)\(endpoint)")
+            #endif
+
+            // 后端返回 { success, data: { records, pagination } } 格式
+            let response: APIResponse<PublicDiaryAnalysisResponse> = try await APIService.shared.get(endpoint)
+
+            #if DEBUG
+            print("📦 API响应: success=\(response.success ?? false), data=\(response.data != nil ? "有数据" : "无数据")")
+            #endif
+
+            guard let data = response.data else {
+                #if DEBUG
+                print("❌ 公开日记分析返回数据为空, error=\(response.error ?? "无"), message=\(response.message ?? "无")")
+                #endif
+                return
+            }
+
+            #if DEBUG
+            print("✅ 公开日记分析加载成功: \(data.records.count) 条, refresh=\(refresh)")
+            for (index, record) in data.records.prefix(3).enumerated() {
+                print("  [\(index)] id=\(record.id), title=\(record.diaryTitle), isBatch=\(record.isBatch)")
+            }
+            #endif
+
+            if refresh {
+                publicDiaryAnalysis = data.records
+                diaryAnalysisRefreshId = UUID()  // 更新刷新标识符，强制 SwiftUI 重新渲染
+            } else {
+                publicDiaryAnalysis.append(contentsOf: data.records)
+            }
+
+            if let pagination = data.pagination {
+                publicDiaryAnalysisHasMore = publicDiaryAnalysisPage < pagination.totalPages
+            } else {
+                publicDiaryAnalysisHasMore = data.records.count >= pageSize
+            }
+
+            publicDiaryAnalysisPage += 1
+        } catch {
+            #if DEBUG
+            print("❌ 加载公开日记分析失败: \(error)")
+            if case let APIError.decodingError(decodingError) = error {
+                print("  解码错误详情: \(decodingError)")
+            }
+            #endif
+        }
+    }
+
+    // MARK: - 创意作品 API（动态栏目）
+
+    func loadCreativeWorks(refresh: Bool = false) async {
+        if refresh {
+            creativeWorksPage = 1
+            creativeWorksHasMore = true
+        }
+
+        guard creativeWorksHasMore else { return }
+        isLoadingCreativeWorks = true
+        defer { isLoadingCreativeWorks = false }
+
+        do {
+            let endpoint = "\(APIConfig.Endpoints.creativeWorksPublic)?page=\(creativeWorksPage)&pageSize=\(pageSize)"
+
+            #if DEBUG
+            print("🌐 加载创意作品: \(endpoint)")
+            #endif
+
+            let response: CreativeWorksResponse = try await APIService.shared.get(endpoint)
+
+            #if DEBUG
+            print("✅ 创意作品加载成功: \(response.works.count) 条")
+            #endif
+
+            if refresh {
+                creativeWorks = response.works
+            } else {
+                creativeWorks.append(contentsOf: response.works)
+            }
+
+            if let pagination = response.pagination {
+                creativeWorksHasMore = creativeWorksPage < pagination.totalPages
+            } else {
+                creativeWorksHasMore = response.works.count >= pageSize
+            }
+
+            creativeWorksPage += 1
+        } catch {
+            #if DEBUG
+            print("❌ 加载创意作品失败: \(error)")
+            #endif
+        }
+    }
+
     // MARK: - 重置分页
 
     func resetPagination() {
@@ -540,6 +618,10 @@ class WorksViewModel: ObservableObject {
         poetryHasMore = true
         marketPage = 1
         marketHasMore = true
+        publicDiaryAnalysisPage = 1
+        publicDiaryAnalysisHasMore = true
+        creativeWorksPage = 1
+        creativeWorksHasMore = true
         // 兼容旧代码
         currentPage = 1
         hasMore = true

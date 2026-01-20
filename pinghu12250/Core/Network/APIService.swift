@@ -58,11 +58,15 @@ class APIService: ObservableObject {
     private init() {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = APIConfig.requestTimeout
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData  // 禁用缓存，确保获取最新数据
+        config.urlCache = nil  // 不使用 URL 缓存
         self.session = URLSession(configuration: config)
 
         // 长超时 session 用于 AI 分析
         let longConfig = URLSessionConfiguration.default
         longConfig.timeoutIntervalForRequest = APIConfig.aiAnalysisTimeout
+        longConfig.requestCachePolicy = .reloadIgnoringLocalCacheData
+        longConfig.urlCache = nil
         self.longTimeoutSession = URLSession(configuration: longConfig)
     }
 

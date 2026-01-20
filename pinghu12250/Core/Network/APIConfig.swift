@@ -128,6 +128,10 @@ enum APIConfig {
         static let poetryWorks = "/poetry-works"
         static let poetryPublic = "/poetry-works/public"
 
+        // 创意作品（动态栏目）
+        static let creativeWorksPublic = "/creative-works/public"
+        static let creativeWorksPublicDetail = "/creative-works"  // + /{id}
+
         // 购物
         static let marketWorks = "/market/works"
         static let marketMyPurchases = "/market/my-purchases"
@@ -143,6 +147,8 @@ enum APIConfig {
         static let diaryAnalyzeBatch = "/ai-analysis/diary/analyze-batch"
         static let diaryAnalysisSave = "/ai-analysis/diary/save"
         static let diaryAnalysisHistory = "/ai-analysis/diary/history"
+        static let diaryAnalysisPublic = "/ai-analysis/diary/public"  // 公开日记分析（作品广场）
+        static let diaryAnalysisPublicDetail = "/ai-analysis/diary/public"  // + /{id}
 
         // 日记游戏化
         static let diaryGameStats = "/diary-game/stats"

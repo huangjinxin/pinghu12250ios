@@ -18,6 +18,7 @@ struct WorksGalleryView: View {
         case gallery = "少儿画廊"
         case recitation = "少儿朗诵"
         case diaryAnalysis = "日记分析"
+        case creativeWorks = "创意作品"
         case poetry = "唐诗宋词"
         case shopping = "购物广场"
 
@@ -26,6 +27,7 @@ struct WorksGalleryView: View {
             case .gallery: return "photo.artframe"
             case .recitation: return "mic.fill"
             case .diaryAnalysis: return "doc.text.magnifyingglass"
+            case .creativeWorks: return "paintbrush.pointed.fill"
             case .poetry: return "text.book.closed"
             case .shopping: return "cart.fill"
             }
@@ -46,7 +48,9 @@ struct WorksGalleryView: View {
                     case .recitation:
                         RecitationTabView(viewModel: viewModel)
                     case .diaryAnalysis:
-                        DiaryAnalysisTabView()
+                        DiaryAnalysisTabView(viewModel: viewModel)
+                    case .creativeWorks:
+                        CreativeWorksTabView(viewModel: viewModel)
                     case .poetry:
                         PoetryWorksTabView(viewModel: viewModel)
                     case .shopping:
@@ -653,6 +657,17 @@ struct PoetryWorksTabView: View {
                         .background(Color(.systemGray6))
                         .cornerRadius(10)
                 }
+
+                // 刷新按钮
+                Button {
+                    Task { await viewModel.loadPoetryWorks(refresh: true) }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .foregroundColor(.appPrimary)
+                        .padding(10)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(10)
+                }
             }
             .padding()
 
@@ -670,11 +685,9 @@ struct PoetryWorksTabView: View {
                         GridItem(.flexible(), spacing: 16)
                     ], spacing: 20) {
                         ForEach(viewModel.poetryWorks) { poetry in
-                            PoetryWorkCard(poetry: poetry, viewModel: viewModel)
+                            PoetryWorkCard(poetry: poetry)
                                 .onTapGesture {
                                     selectedPoetry = poetry
-                                    // 打开时自动下载缓存
-                                    Task { await viewModel.cachePoetry(poetry) }
                                 }
                         }
                     }
@@ -709,21 +722,20 @@ struct PoetryWorksTabView: View {
         .sheet(item: $selectedPoetry) { poetry in
             PoetryDetailSheet(poetry: poetry, viewModel: viewModel)
         }
+        .alert("刷新失败", isPresented: .constant(viewModel.poetryRefreshError != nil)) {
+            Button("确定") { viewModel.poetryRefreshError = nil }
+        } message: {
+            Text(viewModel.poetryRefreshError ?? "")
+        }
     }
 }
 
 struct PoetryWorkCard: View {
     let poetry: PoetryWorkData
-    @ObservedObject var viewModel: WorksViewModel
-    @State private var isDownloading = false
-
-    var isCached: Bool {
-        viewModel.isPoetryCached(poetry.id)
-    }
 
     var body: some View {
         VStack(spacing: 0) {
-            // 封面区域（使用 WKWebView 直接渲染 HTML）
+            // 封面区域（使用静态占位图，避免 WKWebView 性能问题）
             ZStack {
                 // 渐变边框背景
                 RoundedRectangle(cornerRadius: 8)
@@ -743,16 +755,9 @@ struct PoetryWorkCard: View {
                     .fill(Color.white)
                     .padding(3)
                     .overlay(
-                        Group {
-                            if let htmlCode = poetry.htmlCode, !htmlCode.isEmpty {
-                                PoetryThumbnailView(htmlCode: htmlCode)
-                                    .padding(3)
-                            } else {
-                                poetryPlaceholder
-                                    .padding(3)
-                            }
-                        }
-                        .clipped()
+                        poetryPlaceholder
+                            .padding(3)
+                            .clipped()
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
@@ -798,48 +803,11 @@ struct PoetryWorkCard: View {
                         Text(formatDate(createdAt))
                             .font(.system(size: 9))
                             .foregroundColor(.secondary)
-                    }
+                }
                 }
 
                 // 操作按钮
                 HStack(spacing: 8) {
-                    // 下载/缓存按钮（左对齐）
-                    if isCached {
-                        // 已缓存 - 显示绿色勾
-                        HStack(spacing: 2) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 10))
-                            Text("已缓存")
-                                .font(.system(size: 9))
-                        }
-                        .foregroundColor(.green)
-                    } else {
-                        // 未缓存 - 显示下载按钮
-                        Button {
-                            Task {
-                                isDownloading = true
-                                await viewModel.cachePoetry(poetry)
-                                isDownloading = false
-                            }
-                        } label: {
-                            HStack(spacing: 2) {
-                                if isDownloading {
-                                    ProgressView()
-                                        .scaleEffect(0.6)
-                                        .frame(width: 10, height: 10)
-                                } else {
-                                    Image(systemName: "arrow.down.circle")
-                                        .font(.system(size: 10))
-                                }
-                                Text(isDownloading ? "下载中" : "下载")
-                                    .font(.system(size: 9))
-                            }
-                            .foregroundColor(.blue)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isDownloading)
-                    }
-
                     Spacer()
 
                     // 分享按钮
@@ -1310,6 +1278,122 @@ struct PoetryWebView: UIViewRepresentable {
                 self.parent.isLoading = false
             }
         }
+    }
+}
+
+// MARK: - 创意作品
+
+struct CreativeWorksTabView: View {
+    @ObservedObject var viewModel: WorksViewModel
+
+    var body: some View {
+        ScrollView {
+            if viewModel.isLoadingCreativeWorks && viewModel.creativeWorks.isEmpty {
+                ProgressView()
+                    .padding(40)
+            } else if viewModel.creativeWorks.isEmpty {
+                emptyState(icon: "paintbrush.pointed.fill", text: "暂无创意作品")
+            } else {
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), spacing: 12),
+                    GridItem(.flexible(), spacing: 12)
+                ], spacing: 12) {
+                    ForEach(viewModel.creativeWorks) { work in
+                        CreativeWorkCard(work: work)
+                    }
+                }
+                .padding()
+
+                if viewModel.creativeWorksHasMore {
+                    Button {
+                        Task { await viewModel.loadCreativeWorks() }
+                    } label: {
+                        if viewModel.isLoadingCreativeWorks {
+                            ProgressView()
+                        } else {
+                            Text("加载更多")
+                        }
+                    }
+                    .padding()
+                }
+            }
+        }
+        .refreshable {
+            await viewModel.loadCreativeWorks(refresh: true)
+        }
+        .task {
+            if viewModel.creativeWorks.isEmpty {
+                await viewModel.loadCreativeWorks(refresh: true)
+            }
+        }
+    }
+}
+
+struct CreativeWorkCard: View {
+    let work: CreativeWorkItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // 封面图片
+            if let imageUrl = work.fullCoverImageURL {
+                AsyncImage(url: URL(string: imageUrl)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(height: 120)
+                            .clipped()
+                    case .failure, .empty:
+                        creativePlaceholder
+                    @unknown default:
+                        creativePlaceholder
+                    }
+                }
+                .cornerRadius(10)
+            } else {
+                creativePlaceholder
+            }
+
+            // 标题
+            Text(work.title)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .lineLimit(2)
+
+            // 作者和时间
+            HStack {
+                if let author = work.author {
+                    Text(author.displayName)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Text(work.relativeTime)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+    }
+
+    private var creativePlaceholder: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .fill(
+                LinearGradient(
+                    gradient: Gradient(colors: [.orange.opacity(0.6), .pink.opacity(0.6)]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .frame(height: 120)
+            .overlay(
+                Image(systemName: "paintbrush.pointed.fill")
+                    .font(.system(size: 30))
+                    .foregroundColor(.white.opacity(0.7))
+            )
     }
 }
 
@@ -1957,73 +2041,78 @@ func emptyState(icon: String, text: String) -> some View {
     .padding(40)
 }
 
-// MARK: - 日记分析 Tab（作品广场版本）
+// MARK: - 日记分析 Tab（作品广场版本 - 使用公开 API）
 
 struct DiaryAnalysisTabView: View {
-    @StateObject private var aiService = DiaryAIService.shared
-    @State private var selectedRecord: DiaryAnalysisData?
+    @ObservedObject var viewModel: WorksViewModel
+    @State private var selectedRecord: PublicDiaryAnalysisItem?
 
     var body: some View {
         ScrollView {
-            if aiService.isLoadingHistory && aiService.analysisHistory.isEmpty {
+            if viewModel.isLoadingPublicDiaryAnalysis && viewModel.publicDiaryAnalysis.isEmpty {
                 ProgressView()
                     .padding(40)
-            } else if aiService.analysisHistory.isEmpty {
-                emptyState(icon: "doc.text.magnifyingglass", text: "暂无日记分析记录")
+            } else if viewModel.publicDiaryAnalysis.isEmpty {
+                emptyState(icon: "doc.text.magnifyingglass", text: "暂无公开的日记分析")
             } else {
                 LazyVStack(spacing: 12) {
-                    ForEach(aiService.analysisHistory) { record in
-                        WorksDiaryAnalysisCard(record: record)
+                    ForEach(viewModel.publicDiaryAnalysis) { record in
+                        PublicDiaryAnalysisCard(record: record)
                             .onTapGesture {
                                 selectedRecord = record
                             }
+                    }
+
+                    // 加载更多
+                    if viewModel.publicDiaryAnalysisHasMore {
+                        Button {
+                            Task { await viewModel.loadPublicDiaryAnalysis() }
+                        } label: {
+                            if viewModel.isLoadingPublicDiaryAnalysis {
+                                ProgressView()
+                            } else {
+                                Text("加载更多")
+                            }
+                        }
+                        .padding()
                     }
                 }
                 .padding()
             }
         }
         .refreshable {
-            await aiService.loadAnalysisHistory()
+            await viewModel.loadPublicDiaryAnalysis(refresh: true)
         }
         .task {
-            if aiService.analysisHistory.isEmpty {
-                await aiService.loadAnalysisHistory()
+            if viewModel.publicDiaryAnalysis.isEmpty {
+                await viewModel.loadPublicDiaryAnalysis(refresh: true)
             }
         }
         .sheet(item: $selectedRecord) { record in
-            WorksDiaryAnalysisDetailSheet(record: record)
+            PublicDiaryAnalysisDetailSheet(record: record)
         }
     }
 }
 
-struct WorksDiaryAnalysisCard: View {
-    let record: DiaryAnalysisData
+struct PublicDiaryAnalysisCard: View {
+    let record: PublicDiaryAnalysisItem
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // 标题和日期
-            HStack {
-                Text(record.displayTitle)
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer()
-                Text(record.relativeTime)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            // 分析类型标签
+            // 标签行（参考 Web 端）
             HStack(spacing: 8) {
-                Text(record.analysisTypeLabel)
+                // 分析类型标签
+                Text(record.isBatch ? "批量分析" : "单条分析")
                     .font(.caption)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.appPrimary.opacity(0.1))
-                    .foregroundColor(.appPrimary)
+                    .background(record.isBatch ? Color.blue.opacity(0.1) : Color.green.opacity(0.1))
+                    .foregroundColor(record.isBatch ? .blue : .green)
                     .cornerRadius(6)
 
-                if let score = record.overallScore {
-                    Text("评分: \(score)")
+                // 周期标签
+                if let period = record.period {
+                    Text(period)
                         .font(.caption)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -2031,36 +2120,101 @@ struct WorksDiaryAnalysisCard: View {
                         .foregroundColor(.orange)
                         .cornerRadius(6)
                 }
+
+                // 日记数量
+                Text("\(record.diaryCount ?? 1)篇日记")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
-            // 摘要
-            if let summary = record.summary, !summary.isEmpty {
-                Text(summary)
+            // 日记标题（使用 diarySnapshot）
+            VStack(alignment: .leading, spacing: 4) {
+                Text(record.diaryTitle)
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .lineLimit(1)
+                    .foregroundColor(.primary)
+
+                // 分析预览
+                Text(record.analysisPreview)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                    .lineLimit(3)
+                    .lineLimit(2)
+            }
+
+            // 作者信息
+            if let user = record.user {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(Color.appPrimary.opacity(0.2))
+                        .frame(width: 24, height: 24)
+                        .overlay(
+                            Text(String(user.displayName.prefix(1)))
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.appPrimary)
+                        )
+                    Text(user.displayName)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            // 底部信息
+            HStack {
+                Text(record.relativeTime)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                if let modelName = record.modelName {
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                            .font(.caption2)
+                        Text(modelName.count > 12 ? String(modelName.prefix(10)) + "..." : modelName)
+                            .font(.caption)
+                    }
+                    .foregroundColor(.secondary)
+                }
             }
         }
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
+        .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
     }
 }
 
-struct WorksDiaryAnalysisDetailSheet: View {
-    let record: DiaryAnalysisData
+struct PublicDiaryAnalysisDetailSheet: View {
+    let record: PublicDiaryAnalysisItem
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    // 标题
-                    Text(record.displayTitle)
-                        .font(.title2)
-                        .fontWeight(.bold)
+                    // 作者信息
+                    if let user = record.user {
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(Color.appPrimary.opacity(0.2))
+                                .frame(width: 44, height: 44)
+                                .overlay(
+                                    Text(String(user.displayName.prefix(1)))
+                                        .font(.system(size: 18, weight: .medium))
+                                        .foregroundColor(.appPrimary)
+                                )
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(user.displayName)
+                                    .font(.headline)
+                                Text(record.relativeTime)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
 
-                    // 分析类型和评分
+                    // 分析类型
                     HStack(spacing: 12) {
                         Text(record.analysisTypeLabel)
                             .font(.subheadline)
@@ -2070,33 +2224,16 @@ struct WorksDiaryAnalysisDetailSheet: View {
                             .foregroundColor(.appPrimary)
                             .cornerRadius(8)
 
-                        if let score = record.overallScore {
-                            HStack(spacing: 4) {
-                                Image(systemName: "star.fill")
-                                    .foregroundColor(.orange)
-                                Text("\(score)分")
-                                    .fontWeight(.medium)
-                            }
+                        Text(record.displayTitle)
                             .font(.subheadline)
-                        }
-
-                        Spacer()
-
-                        Text(record.relativeTime)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .fontWeight(.medium)
                     }
 
                     Divider()
 
                     // 分析结果
-                    if let result = record.result, !result.isEmpty {
-                        Text(result)
-                            .font(.body)
-                    } else if let summary = record.summary {
-                        Text(summary)
-                            .font(.body)
-                    }
+                    Text(record.analysis)
+                        .font(.body)
                 }
                 .padding()
             }
