@@ -163,6 +163,18 @@ enum APIConfig {
         // 书写评价
         static let writingEvaluation = "/writing-evaluation"  // + /{noteId}/status, /{noteId}, /analyze
 
+        // 字体管理
+        static let fonts = "/fonts"
+        static let fontDetail = "/fonts"  // + /{id}
+        static let fontDefault = "/fonts"  // + /{id}/default
+        static let fontFile = "/fonts"  // + /{id}/file
+
+        // 书写作品
+        static let calligraphy = "/calligraphy"
+        static let calligraphyMy = "/calligraphy/my"
+        static let calligraphyDetail = "/calligraphy"  // + /{id}
+        static let calligraphyLike = "/calligraphy"  // + /{id}/like
+
         // 公开接口
         static let unifiedFeed = "/public/unified-feed"
         static let worksFeed = "/public/works-feed"

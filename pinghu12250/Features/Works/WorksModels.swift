@@ -35,20 +35,25 @@ func buildFullURL(_ relativePath: String?) -> String? {
 struct WorkAuthor: Codable {
     let id: String
     let username: String
-    let nickname: String?
+    let nickname: String?  // 直接的 nickname 字段
     let avatar: String?
+    let profile: WorkAuthorProfile?  // 嵌套的 profile 对象
 
     var displayName: String {
-        nickname ?? username
+        nickname ?? profile?.nickname ?? username
     }
 
     var avatarLetter: String {
-        String((nickname ?? username).prefix(1))
+        String((nickname ?? profile?.nickname ?? username).prefix(1))
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, username, nickname, avatar
+        case id, username, nickname, avatar, profile
     }
+}
+
+struct WorkAuthorProfile: Codable {
+    let nickname: String?
 }
 
 // MARK: - 画廊作品
@@ -489,16 +494,79 @@ struct PublicDiaryAnalysisResponse: Decodable {
 
 // MARK: - 创意作品（动态栏目）
 
+/// 创意作品分类（支持对象格式）
+struct CreativeWorkCategory: Codable {
+    let id: String?
+    let name: String?
+    let slug: String?
+}
+
 struct CreativeWorkItem: Codable, Identifiable {
     let id: String
     let title: String
     let content: String?
+    let htmlCode: String?  // 用于诗词HTML渲染
     let coverImage: String?
-    let category: String?
+    let categoryObj: CreativeWorkCategory?  // 分类对象
+    let categoryStr: String?  // 分类字符串（兼容旧格式）
     let status: String?
     let likesCount: Int?
     let createdAt: String?
     let author: WorkAuthor?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, content, htmlCode, coverImage, status, likesCount, createdAt, author
+        case categoryObj = "category"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        content = try container.decodeIfPresent(String.self, forKey: .content)
+        htmlCode = try container.decodeIfPresent(String.self, forKey: .htmlCode)
+        coverImage = try container.decodeIfPresent(String.self, forKey: .coverImage)
+        status = try container.decodeIfPresent(String.self, forKey: .status)
+        likesCount = try container.decodeIfPresent(Int.self, forKey: .likesCount)
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+        author = try container.decodeIfPresent(WorkAuthor.self, forKey: .author)
+
+        // 尝试解析 category 为对象或字符串
+        if let catObj = try? container.decodeIfPresent(CreativeWorkCategory.self, forKey: .categoryObj) {
+            categoryObj = catObj
+            categoryStr = nil
+        } else if let catStr = try? container.decodeIfPresent(String.self, forKey: .categoryObj) {
+            categoryObj = nil
+            categoryStr = catStr
+        } else {
+            categoryObj = nil
+            categoryStr = nil
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(content, forKey: .content)
+        try container.encodeIfPresent(htmlCode, forKey: .htmlCode)
+        try container.encodeIfPresent(coverImage, forKey: .coverImage)
+        try container.encodeIfPresent(status, forKey: .status)
+        try container.encodeIfPresent(likesCount, forKey: .likesCount)
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(author, forKey: .author)
+        // 优先编码对象格式
+        if let catObj = categoryObj {
+            try container.encode(catObj, forKey: .categoryObj)
+        } else if let catStr = categoryStr {
+            try container.encode(catStr, forKey: .categoryObj)
+        }
+    }
+
+    /// 获取分类名称
+    var categoryName: String? {
+        categoryObj?.name ?? categoryStr
+    }
 
     var fullCoverImageURL: String? {
         buildFullURL(coverImage)

@@ -33,9 +33,9 @@ class WorksViewModel: ObservableObject {
     @Published var currentPlayingId: String?
     private var audioPlayer: AVPlayer?
 
-    // MARK: - 唐诗宋词数据
+    // MARK: - 唐诗宋词数据（使用 creative-works API）
 
-    @Published var poetryWorks: [PoetryWorkData] = []
+    @Published var poetryWorks: [CreativeWorkItem] = []
     @Published var isLoadingPoetry = false
     @Published var poetryRefreshError: String?
     @Published var poetrySortBy: String = "latest"
@@ -70,6 +70,13 @@ class WorksViewModel: ObservableObject {
     @Published var creativeWorksPage: Int = 1
     @Published var creativeWorksHasMore: Bool = true
 
+    // MARK: - 书写作品数据
+
+    @Published var calligraphyWorks: [CalligraphyWork] = []
+    @Published var isLoadingCalligraphy = false
+    @Published var calligraphyPage: Int = 1
+    @Published var calligraphyHasMore: Bool = true
+
     // MARK: - 分页（每个 Tab 独立）
 
     @Published var pageSize: Int = 18
@@ -99,7 +106,7 @@ class WorksViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var selectedWork: GalleryWork?
     @Published var selectedRecitation: RecitationWork?
-    @Published var selectedPoetry: PoetryWorkData?
+    @Published var selectedPoetry: CreativeWorkItem?
     @Published var selectedMarketWork: MarketWork?
 
     // MARK: - 初始化
@@ -261,7 +268,7 @@ class WorksViewModel: ObservableObject {
         currentPlayingId = nil
     }
 
-    // MARK: - 唐诗宋词 API
+    // MARK: - 唐诗宋词 API（使用 creative-works API）
 
     func loadPoetryWorks(refresh: Bool = false) async {
         if refresh {
@@ -271,15 +278,27 @@ class WorksViewModel: ObservableObject {
         }
 
         guard poetryHasMore else { return }
+
+        // 本地缓存优先（仅首次加载时）
+        if poetryPage == 1 && !refresh {
+            if let cached: [CreativeWorkItem] = CacheService.shared.getCachedPoetryList(type: [CreativeWorkItem].self) {
+                poetryWorks = cached
+                #if DEBUG
+                print("📦 从本地缓存加载唐诗宋词: \(cached.count) 条")
+                #endif
+                // 继续从网络加载最新数据
+            }
+        }
+
         isLoadingPoetry = true
         defer { isLoadingPoetry = false }
 
-        // 从网络加载（参数与 Web 端保持一致）
+        // 使用 creative-works API，按 poetry 分类筛选
         do {
             var params: [String: String] = [
                 "page": "\(poetryPage)",
-                "limit": "\(pageSize)",  // 与后端参数名一致
-                "sort": poetrySortBy
+                "limit": "\(pageSize)",
+                "category": "poetry"  // 筛选唐诗宋词分类（slug）
             ]
 
             if !poetrySearchText.isEmpty {
@@ -287,34 +306,51 @@ class WorksViewModel: ObservableObject {
             }
 
             let queryString = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
-            let endpoint = "\(APIConfig.Endpoints.poetryPublic)?\(queryString)"
+            let endpoint = "\(APIConfig.Endpoints.creativeWorksPublic)?\(queryString)"
 
             #if DEBUG
-            print("🌐 加载唐诗宋词: \(APIConfig.baseURL)\(endpoint)")
+            print("🌐 加载唐诗宋词(creative-works): \(APIConfig.baseURL)\(endpoint)")
             #endif
 
-            let response: PoetryResponse = try await APIService.shared.get(endpoint)
+            // 后端返回 { success, data: { works, pagination } } 格式
+            let response: APIResponse<CreativeWorksResponse> = try await APIService.shared.get(endpoint)
+
+            guard let data = response.data else {
+                #if DEBUG
+                print("❌ 唐诗宋词返回数据为空, error=\(response.error ?? "无")")
+                #endif
+                poetryRefreshError = "加载失败，请检查网络"
+                return
+            }
 
             #if DEBUG
-            print("✅ 唐诗宋词加载成功: \(response.works.count) 条, refresh=\(refresh)")
-            for (index, work) in response.works.prefix(3).enumerated() {
+            print("✅ 唐诗宋词加载成功: \(data.works.count) 条, refresh=\(refresh)")
+            for (index, work) in data.works.prefix(3).enumerated() {
                 print("  [\(index)] id=\(work.id), title=\(work.title)")
             }
             #endif
 
             // 刷新时完全替换数据，确保显示最新内容
             if refresh {
-                poetryWorks = response.works
-                poetryRefreshError = nil  // 清除之前的错误
-                poetryRefreshId = UUID()  // 更新刷新标识符，强制 SwiftUI 重新渲染
+                poetryWorks = data.works
+                poetryRefreshError = nil
+                poetryRefreshId = UUID()
             } else {
-                poetryWorks.append(contentsOf: response.works)
+                poetryWorks.append(contentsOf: data.works)
             }
 
-            if let pagination = response.pagination {
+            // 缓存到本地（仅第一页）
+            if poetryPage == 1 {
+                try? CacheService.shared.cachePoetryList(data: poetryWorks)
+                #if DEBUG
+                print("💾 已缓存唐诗宋词列表: \(poetryWorks.count) 条")
+                #endif
+            }
+
+            if let pagination = data.pagination {
                 poetryHasMore = poetryPage < pagination.totalPages
             } else {
-                poetryHasMore = response.works.count >= pageSize
+                poetryHasMore = data.works.count >= pageSize
             }
 
             poetryPage += 1
@@ -325,7 +361,10 @@ class WorksViewModel: ObservableObject {
                 print("  解码错误详情: \(decodingError)")
             }
             #endif
-            poetryRefreshError = "加载失败，请检查网络"
+            // 如果网络失败但有缓存，不显示错误
+            if poetryWorks.isEmpty {
+                poetryRefreshError = "加载失败，请检查网络"
+            }
         }
     }
 
@@ -606,6 +645,88 @@ class WorksViewModel: ObservableObject {
         }
     }
 
+    // MARK: - 书写作品 API
+
+    func loadCalligraphyWorks(refresh: Bool = false, sort: String = "latest", mode: String = "all") async {
+        if refresh {
+            calligraphyPage = 1
+            calligraphyHasMore = true
+        }
+
+        guard calligraphyHasMore else { return }
+        isLoadingCalligraphy = true
+        defer { isLoadingCalligraphy = false }
+
+        do {
+            let params: [String: String] = [
+                "page": "\(calligraphyPage)",
+                "limit": "\(pageSize)",
+                "sort": sort
+            ]
+
+            let endpoint: String
+            if mode == "my" {
+                endpoint = "/calligraphy/my"
+            } else {
+                endpoint = "/calligraphy"
+            }
+
+            let queryString = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
+            let fullEndpoint = "\(endpoint)?\(queryString)"
+
+            #if DEBUG
+            print("🌐 加载书写作品: \(fullEndpoint)")
+            #endif
+
+            let response: CalligraphyListResponse = try await APIService.shared.get(fullEndpoint)
+
+            guard let data = response.data else {
+                #if DEBUG
+                print("❌ 书写作品返回数据为空")
+                #endif
+                return
+            }
+
+            #if DEBUG
+            print("✅ 书写作品加载成功: \(data.works.count) 条")
+            #endif
+
+            if refresh {
+                calligraphyWorks = data.works
+            } else {
+                calligraphyWorks.append(contentsOf: data.works)
+            }
+
+            calligraphyHasMore = calligraphyPage < data.totalPages
+            calligraphyPage += 1
+        } catch {
+            #if DEBUG
+            print("❌ 加载书写作品失败: \(error)")
+            #endif
+        }
+    }
+
+    func toggleCalligraphyLike(_ work: CalligraphyWork) async {
+        do {
+            let endpoint = "/calligraphy/\(work.id)/like"
+            let response: LikeResponse = try await APIService.shared.post(endpoint, body: EmptyRequest())
+
+            if let data = response.data {
+                if let index = calligraphyWorks.firstIndex(where: { $0.id == work.id }) {
+                    var updatedWork = calligraphyWorks[index]
+                    // 由于 CalligraphyWork 是 struct，需要创建新实例
+                    // 这里简单刷新列表
+                    await loadCalligraphyWorks(refresh: true)
+                }
+            }
+        } catch {
+            #if DEBUG
+            print("❌ 点赞失败: \(error)")
+            #endif
+            errorMessage = "操作失败"
+        }
+    }
+
     // MARK: - 重置分页
 
     func resetPagination() {
@@ -622,6 +743,8 @@ class WorksViewModel: ObservableObject {
         publicDiaryAnalysisHasMore = true
         creativeWorksPage = 1
         creativeWorksHasMore = true
+        calligraphyPage = 1
+        calligraphyHasMore = true
         // 兼容旧代码
         currentPage = 1
         hasMore = true

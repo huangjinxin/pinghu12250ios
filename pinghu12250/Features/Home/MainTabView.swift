@@ -31,6 +31,7 @@ struct MainTabView: View {
         case diary = "日记"
         case homework = "作业"
         case reading = "读书"
+        case writing = "书写"
         case notes = "笔记"
         case photos = "照片"
         case works = "作品"
@@ -45,6 +46,7 @@ struct MainTabView: View {
             case .diary: return "book.closed.fill"
             case .homework: return "doc.text.fill"
             case .reading: return "books.vertical.fill"
+            case .writing: return "pencil.tip.crop.circle"
             case .notes: return "note.text"
             case .photos: return "photo.on.rectangle.angled"
             case .works: return "paintpalette.fill"
@@ -59,6 +61,7 @@ struct MainTabView: View {
             case .diary: return .purple
             case .homework: return .blue
             case .reading: return .green
+            case .writing: return .brown
             case .notes: return .yellow
             case .photos: return .teal
             case .works: return .pink
@@ -203,7 +206,7 @@ struct MainTabView: View {
             ScrollView {
                 VStack(spacing: 4) {
                     sidebarSection("首页", tabs: [.dashboard])
-                    sidebarSection("学习", tabs: [.diary, .homework, .reading, .notes])
+                    sidebarSection("学习", tabs: [.diary, .homework, .reading, .writing, .notes])
                     sidebarSection("社区", tabs: [.growth, .photos, .works])
                     sidebarSection("账户", tabs: [.wallet])
                 }
@@ -385,6 +388,8 @@ struct MainTabView: View {
                     HomeworkListView()
                 case .reading:
                     ReadingView()
+                case .writing:
+                    WritingView()
                 case .notes:
                     NotesMainView()
                 case .photos:

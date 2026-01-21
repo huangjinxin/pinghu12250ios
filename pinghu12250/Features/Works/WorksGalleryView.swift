@@ -19,6 +19,7 @@ struct WorksGalleryView: View {
         case recitation = "少儿朗诵"
         case diaryAnalysis = "日记分析"
         case creativeWorks = "创意作品"
+        case calligraphy = "书写作品"
         case poetry = "唐诗宋词"
         case shopping = "购物广场"
 
@@ -28,6 +29,7 @@ struct WorksGalleryView: View {
             case .recitation: return "mic.fill"
             case .diaryAnalysis: return "doc.text.magnifyingglass"
             case .creativeWorks: return "paintbrush.pointed.fill"
+            case .calligraphy: return "pencil.tip"
             case .poetry: return "text.book.closed"
             case .shopping: return "cart.fill"
             }
@@ -51,6 +53,8 @@ struct WorksGalleryView: View {
                         DiaryAnalysisTabView(viewModel: viewModel)
                     case .creativeWorks:
                         CreativeWorksTabView(viewModel: viewModel)
+                    case .calligraphy:
+                        CalligraphyWorksTabView(viewModel: viewModel)
                     case .poetry:
                         PoetryWorksTabView(viewModel: viewModel)
                     case .shopping:
@@ -622,7 +626,7 @@ struct RecitationDetailSheet: View {
 
 struct PoetryWorksTabView: View {
     @ObservedObject var viewModel: WorksViewModel
-    @State private var selectedPoetry: PoetryWorkData?
+    @State private var selectedPoetry: CreativeWorkItem?
     @State private var searchText = ""
 
     var body: some View {
@@ -678,6 +682,11 @@ struct PoetryWorksTabView: View {
                 } else if viewModel.poetryWorks.isEmpty {
                     emptyState(icon: "text.book.closed", text: "暂无诗词作品")
                 } else {
+                    // 调试：显示数据数量
+                    #if DEBUG
+                    let _ = print("📱 PoetryWorksTabView 渲染: \(viewModel.poetryWorks.count) 条数据")
+                    #endif
+
                     // 三列卡片式网格布局（增加间距，适应宽卡片）
                     LazyVGrid(columns: [
                         GridItem(.flexible(), spacing: 16),
@@ -731,11 +740,11 @@ struct PoetryWorksTabView: View {
 }
 
 struct PoetryWorkCard: View {
-    let poetry: PoetryWorkData
+    let poetry: CreativeWorkItem
 
     var body: some View {
         VStack(spacing: 0) {
-            // 封面区域（使用静态占位图，避免 WKWebView 性能问题）
+            // 封面区域
             ZStack {
                 // 渐变边框背景
                 RoundedRectangle(cornerRadius: 8)
@@ -755,9 +764,18 @@ struct PoetryWorkCard: View {
                     .fill(Color.white)
                     .padding(3)
                     .overlay(
-                        poetryPlaceholder
-                            .padding(3)
-                            .clipped()
+                        Group {
+                            // 如果有 htmlCode，使用 WKWebView 渲染
+                            if let htmlCode = poetry.htmlCode, !htmlCode.isEmpty {
+                                PoetryThumbnailView(htmlCode: htmlCode)
+                                    .padding(3)
+                                    .clipped()
+                            } else {
+                                poetryPlaceholder
+                                    .padding(3)
+                                    .clipped()
+                            }
+                        }
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
@@ -765,13 +783,23 @@ struct PoetryWorkCard: View {
 
             // 底部信息区（紧凑布局）
             VStack(spacing: 4) {
-                // 标题
-                Text(poetry.title)
-                    .font(.caption2)
-                    .fontWeight(.bold)
-                    .lineLimit(1)
-                    .foregroundColor(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // 标题行（带缓存图标）
+                HStack(spacing: 4) {
+                    Text(poetry.title)
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .lineLimit(1)
+                        .foregroundColor(.primary)
+
+                    Spacer()
+
+                    // 已缓存图标
+                    if CacheService.shared.isPoetryCached(poetryId: poetry.id) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.green)
+                    }
+                }
 
                 // 作者和日期
                 HStack(spacing: 4) {
@@ -992,7 +1020,7 @@ struct PoetryThumbnailView: UIViewRepresentable {
 }
 
 struct PoetryDetailSheet: View {
-    let poetry: PoetryWorkData
+    let poetry: CreativeWorkItem
     @ObservedObject var viewModel: WorksViewModel
     @Environment(\.dismiss) var dismiss
     @State private var showFullscreen = false
@@ -1016,6 +1044,11 @@ struct PoetryDetailSheet: View {
                     if let htmlCode = poetry.htmlCode, !htmlCode.isEmpty {
                         HTMLPreviewView(htmlCode: htmlCode)
                             .frame(minHeight: 400)
+                    } else if let content = poetry.content, !content.isEmpty {
+                        // 如果没有 htmlCode，显示纯文本内容
+                        Text(content)
+                            .font(.body)
+                            .padding()
                     }
 
                     // 操作按钮
@@ -1163,7 +1196,7 @@ struct HTMLPreviewView: UIViewRepresentable {
 
 // 增强版诗词详情页，支持全屏预览
 struct PoetryFullscreenView: View {
-    let poetry: PoetryWorkData
+    let poetry: CreativeWorkItem
     @Environment(\.dismiss) var dismiss
     @State private var isLoading = true
 
@@ -1176,6 +1209,13 @@ struct PoetryFullscreenView: View {
                 if isLoading {
                     ProgressView()
                         .scaleEffect(1.5)
+                }
+            } else if let content = poetry.content, !content.isEmpty {
+                // 如果没有 htmlCode，显示纯文本
+                ScrollView {
+                    Text(content)
+                        .font(.body)
+                        .padding()
                 }
             } else {
                 VStack(spacing: 16) {
@@ -2246,6 +2286,608 @@ struct PublicDiaryAnalysisDetailSheet: View {
             }
         }
     }
+}
+
+// MARK: - 书写作品Tab
+
+struct CalligraphyWorksTabView: View {
+    @ObservedObject var viewModel: WorksViewModel
+    @State private var selectedWork: CalligraphyWork?
+    @State private var sortBy: String = "latest"
+    @State private var viewMode: String = "all"
+    @State private var searchText: String = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // 筛选栏
+            HStack {
+                Picker("排序", selection: $sortBy) {
+                    Text("最新").tag("latest")
+                    Text("最热").tag("popular")
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 120)
+
+                Spacer()
+
+                Picker("视图", selection: $viewMode) {
+                    Text("全部作品").tag("all")
+                    Text("我的作品").tag("my")
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            ScrollView {
+                if viewModel.isLoadingCalligraphy && viewModel.calligraphyWorks.isEmpty {
+                    ProgressView()
+                        .padding(40)
+                } else if viewModel.calligraphyWorks.isEmpty {
+                    emptyState(icon: "pencil.tip", text: "暂无书写作品")
+                } else {
+                    LazyVGrid(columns: [
+                        GridItem(.adaptive(minimum: 160), spacing: 16)
+                    ], spacing: 16) {
+                        ForEach(viewModel.calligraphyWorks) { work in
+                            CalligraphyWorksCard(work: work)
+                                .onTapGesture {
+                                    selectedWork = work
+                                }
+                        }
+                    }
+                    .padding()
+
+                    if viewModel.calligraphyHasMore {
+                        Button {
+                            Task { await viewModel.loadCalligraphyWorks() }
+                        } label: {
+                            if viewModel.isLoadingCalligraphy {
+                                ProgressView()
+                            } else {
+                                Text("加载更多")
+                            }
+                        }
+                        .padding()
+                    }
+                }
+            }
+            .refreshable {
+                await viewModel.loadCalligraphyWorks(refresh: true, sort: sortBy, mode: viewMode)
+            }
+        }
+        .task {
+            if viewModel.calligraphyWorks.isEmpty {
+                await viewModel.loadCalligraphyWorks(refresh: true, sort: sortBy, mode: viewMode)
+            }
+        }
+        .onChange(of: sortBy) { _, newValue in
+            Task { await viewModel.loadCalligraphyWorks(refresh: true, sort: newValue, mode: viewMode) }
+        }
+        .onChange(of: viewMode) { _, newValue in
+            Task { await viewModel.loadCalligraphyWorks(refresh: true, sort: sortBy, mode: newValue) }
+        }
+        .sheet(item: $selectedWork) { work in
+            CalligraphyWorksDetailSheet(work: work, viewModel: viewModel)
+        }
+    }
+}
+
+// MARK: - 书写作品卡片
+
+struct CalligraphyWorksCard: View {
+    let work: CalligraphyWork
+
+    var contentItems: [(char: String, preview: String?)] {
+        if let content = work.content {
+            return zip(content.characters, content.previews).map { ($0, $1) }
+        }
+        return work.displayTitle.map { (String($0), nil as String?) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // 2x2田字格预览
+            ZStack {
+                CalligraphyMiniGrid(items: Array(contentItems.prefix(4)), workPreview: work.preview)
+
+                if let score = work.evaluationScore {
+                    CalligraphyScoreBadge(score: score)
+                        .position(x: 150, y: 20)
+                }
+            }
+            .frame(height: 160)
+            .background(Color(red: 1, green: 0.996, blue: 0.97))
+            .clipped()
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(work.displayTitle)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+
+                HStack {
+                    if let author = work.author {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(Color.gray.opacity(0.3))
+                                .frame(width: 20, height: 20)
+                                .overlay(
+                                    Text(String(author.displayName.prefix(1)))
+                                        .font(.caption2)
+                                )
+                            Text(author.displayName)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 2) {
+                        Image(systemName: work.isLiked == true ? "heart.fill" : "heart")
+                            .foregroundColor(work.isLiked == true ? .red : .gray)
+                        Text("\(work.likeCount)")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                }
+            }
+            .padding(10)
+        }
+        .background(Color(.systemBackground))
+        .cornerRadius(8)
+        .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
+    }
+}
+
+struct CalligraphyMiniGrid: View {
+    let items: [(char: String, preview: String?)]
+    let workPreview: String?
+
+    var body: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 2), spacing: 0) {
+            ForEach(0..<4, id: \.self) { index in
+                CalligraphyMiniCell(
+                    character: index < items.count ? items[index].char : nil,
+                    preview: index < items.count ? items[index].preview : nil,
+                    workPreview: index == 0 ? workPreview : nil
+                )
+            }
+        }
+    }
+}
+
+struct CalligraphyMiniCell: View {
+    let character: String?
+    let preview: String?
+    let workPreview: String?
+
+    var displayPreview: String? {
+        if let p = preview, !p.isEmpty { return p }
+        return workPreview
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Rectangle()
+                    .stroke(Color.black.opacity(0.8), lineWidth: 1)
+
+                Path { path in
+                    path.move(to: CGPoint(x: geo.size.width / 2, y: 0))
+                    path.addLine(to: CGPoint(x: geo.size.width / 2, y: geo.size.height))
+                    path.move(to: CGPoint(x: 0, y: geo.size.height / 2))
+                    path.addLine(to: CGPoint(x: geo.size.width, y: geo.size.height / 2))
+                }
+                .stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                .foregroundColor(Color.red.opacity(0.5))
+
+                if let char = character {
+                    Text(char)
+                        .font(.system(size: geo.size.width * 0.5, design: .serif))
+                        .foregroundColor(Color(red: 0.8, green: 0.4, blue: 0.4).opacity(0.25))
+                }
+
+                if let url = calligraphyImageURL(displayPreview) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFit()
+                    } placeholder: {
+                        EmptyView()
+                    }
+                    .padding(2)
+                }
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+}
+
+struct CalligraphyScoreBadge: View {
+    let score: Int
+
+    var color: Color {
+        if score >= 85 { return .green }
+        if score >= 60 { return .blue }
+        return .orange
+    }
+
+    var body: some View {
+        Text("\(score)")
+            .font(.system(size: 14, weight: .bold))
+            .foregroundColor(.white)
+            .frame(width: 36, height: 36)
+            .background(color.gradient)
+            .clipShape(Circle())
+    }
+}
+
+// MARK: - 书写作品详情（带笔划动画）
+
+struct CalligraphyWorksDetailSheet: View {
+    let work: CalligraphyWork
+    @ObservedObject var viewModel: WorksViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var showReference = true
+    @State private var playingIndex: Int = -1
+
+    var contentItems: [(char: String, preview: String?, strokeData: StrokeDataV2?)] {
+        if let content = work.content {
+            return zip(zip(content.characters, content.previews), content.strokeDataList).map {
+                ($0.0, $0.1, $1)
+            }
+        }
+        return work.displayTitle.map { (String($0), nil as String?, nil as StrokeDataV2?) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // 字帖网格预览（可点击播放笔划）
+                    detailPreview
+                        .padding(.horizontal)
+
+                    Toggle("显示临摹参考", isOn: $showReference)
+                        .padding(.horizontal)
+
+                    Text("点击田字格播放笔划动画")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    if let score = work.evaluationScore {
+                        evaluationSection(score: score)
+                            .padding(.horizontal)
+                    }
+
+                    authorSection
+                        .padding(.horizontal)
+                }
+                .padding(.vertical)
+            }
+            .navigationTitle(work.displayTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var detailPreview: some View {
+        let items = contentItems
+
+        return LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: min(items.count, 5)),
+            spacing: 0
+        ) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                CalligraphyDetailCell(
+                    character: item.char,
+                    preview: item.preview,
+                    workPreview: work.preview,
+                    index: index,
+                    showReference: showReference,
+                    strokeData: item.strokeData,
+                    isPlaying: playingIndex == index,
+                    onTap: {
+                        if playingIndex == index {
+                            playingIndex = -1
+                        } else {
+                            playingIndex = index
+                        }
+                    }
+                )
+            }
+        }
+        .background(Color(red: 1, green: 0.996, blue: 0.97))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+        )
+    }
+
+    private func evaluationSection(score: Int) -> some View {
+        VStack(spacing: 12) {
+            HStack {
+                VStack {
+                    Text("\(score)")
+                        .font(.system(size: 36, weight: .bold))
+                        .foregroundColor(score >= 85 ? .green : score >= 60 ? .blue : .orange)
+                    Text(score >= 85 ? "优秀" : score >= 60 ? "良好" : "需努力")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(width: 80)
+
+                if let data = work.evaluationData {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let recognition = data.recognition?.score {
+                            CalligraphyScoreRow(label: "字形识别", score: recognition, max: 50)
+                        }
+                        if let stroke = data.strokeQuality?.score {
+                            CalligraphyScoreRow(label: "笔画质量", score: stroke, max: 30)
+                        }
+                        if let aesthetics = data.aesthetics?.score {
+                            CalligraphyScoreRow(label: "整体美观", score: aesthetics, max: 20)
+                        }
+                    }
+                }
+            }
+
+            if let summary = work.evaluationData?.summary {
+                Text(summary)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
+    private var authorSection: some View {
+        HStack {
+            if let author = work.author {
+                Circle()
+                    .fill(Color.gray.opacity(0.3))
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Text(String(author.displayName.prefix(1)))
+                            .font(.headline)
+                    )
+
+                VStack(alignment: .leading) {
+                    Text(author.displayName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Text(formatDate(work.createdAt))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+
+            Button {
+                Task { await viewModel.toggleCalligraphyLike(work) }
+            } label: {
+                Label("\(work.likeCount)", systemImage: work.isLiked == true ? "heart.fill" : "heart")
+                    .foregroundColor(work.isLiked == true ? .red : .primary)
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
+
+    private func formatDate(_ dateString: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: dateString) {
+            let displayFormatter = DateFormatter()
+            displayFormatter.dateFormat = "yyyy-MM-dd HH:mm"
+            return displayFormatter.string(from: date)
+        }
+        return dateString
+    }
+}
+
+struct CalligraphyDetailCell: View {
+    let character: String
+    let preview: String?
+    let workPreview: String?
+    let index: Int
+    let showReference: Bool
+    let strokeData: StrokeDataV2?
+    let isPlaying: Bool
+    let onTap: () -> Void
+
+    var displayPreview: String? {
+        if let p = preview, !p.isEmpty { return p }
+        if index == 0 { return workPreview }
+        return nil
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Rectangle()
+                    .stroke(Color.black.opacity(0.8), lineWidth: 1)
+
+                Path { path in
+                    path.move(to: CGPoint(x: geo.size.width / 2, y: 0))
+                    path.addLine(to: CGPoint(x: geo.size.width / 2, y: geo.size.height))
+                    path.move(to: CGPoint(x: 0, y: geo.size.height / 2))
+                    path.addLine(to: CGPoint(x: geo.size.width, y: geo.size.height / 2))
+                }
+                .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                .foregroundColor(Color.red.opacity(0.5))
+
+                if showReference {
+                    Text(character)
+                        .font(.system(size: geo.size.width * 0.7, design: .serif))
+                        .foregroundColor(Color(red: 0.8, green: 0.4, blue: 0.4).opacity(0.3))
+                }
+
+                if let url = calligraphyImageURL(displayPreview) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFit()
+                    } placeholder: {
+                        EmptyView()
+                    }
+                    .padding(2)
+                }
+
+                // 笔划动画层
+                if isPlaying, let data = strokeData {
+                    StrokeAnimationView(strokeData: data, cellSize: geo.size)
+                }
+
+                // 播放提示
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Image(systemName: isPlaying ? "stop.fill" : "play.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white)
+                            .frame(width: 18, height: 18)
+                            .background(isPlaying ? Color.red.opacity(0.8) : Color.black.opacity(0.5))
+                            .clipShape(Circle())
+                            .padding(2)
+                    }
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onTap)
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+}
+
+// MARK: - 笔划动画视图
+
+struct StrokeAnimationView: View {
+    let strokeData: StrokeDataV2
+    let cellSize: CGSize
+    @State private var currentStrokeIndex: Int = 0
+    @State private var currentPointIndex: Int = 0
+    @State private var animationPath: Path = Path()
+
+    var scale: CGFloat {
+        min(cellSize.width / strokeData.canvas.width, cellSize.height / strokeData.canvas.height)
+    }
+
+    var offsetX: CGFloat {
+        (cellSize.width - strokeData.canvas.width * scale) / 2
+    }
+
+    var offsetY: CGFloat {
+        (cellSize.height - strokeData.canvas.height * scale) / 2
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            var path = Path()
+            for (strokeIdx, stroke) in strokeData.strokes.enumerated() {
+                if strokeIdx > currentStrokeIndex { break }
+                let maxPoints = strokeIdx == currentStrokeIndex ? currentPointIndex : stroke.points.count
+                guard maxPoints > 0 else { continue }
+
+                let firstPoint = stroke.points[0]
+                path.move(to: CGPoint(
+                    x: firstPoint.x * scale + offsetX,
+                    y: firstPoint.y * scale + offsetY
+                ))
+
+                for i in 1..<min(maxPoints, stroke.points.count) {
+                    let point = stroke.points[i]
+                    path.addLine(to: CGPoint(
+                        x: point.x * scale + offsetX,
+                        y: point.y * scale + offsetY
+                    ))
+                }
+            }
+
+            context.stroke(path, with: .color(.red), lineWidth: 2)
+        }
+        .onAppear {
+            startAnimation()
+        }
+    }
+
+    private func startAnimation() {
+        currentStrokeIndex = 0
+        currentPointIndex = 0
+        animateNextPoint()
+    }
+
+    private func animateNextPoint() {
+        guard currentStrokeIndex < strokeData.strokes.count else { return }
+
+        let stroke = strokeData.strokes[currentStrokeIndex]
+        if currentPointIndex < stroke.points.count {
+            currentPointIndex += 1
+
+            let delay: TimeInterval
+            if currentPointIndex < stroke.points.count && currentPointIndex > 0 {
+                let dt = stroke.points[currentPointIndex].t - stroke.points[currentPointIndex - 1].t
+                delay = min(dt, 0.05)
+            } else {
+                delay = 0.016
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                animateNextPoint()
+            }
+        } else {
+            currentStrokeIndex += 1
+            currentPointIndex = 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                animateNextPoint()
+            }
+        }
+    }
+}
+
+struct CalligraphyScoreRow: View {
+    let label: String
+    let score: Int
+    let max: Int
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .frame(width: 60, alignment: .leading)
+            ProgressView(value: Double(score), total: Double(max))
+                .tint(.blue)
+            Text("\(score)/\(max)")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .frame(width: 40)
+        }
+    }
+}
+
+// 辅助函数
+private func calligraphyImageURL(_ path: String?) -> URL? {
+    guard let path = path, !path.isEmpty else { return nil }
+    if path.hasPrefix("http://") || path.hasPrefix("https://") {
+        return URL(string: path)
+    }
+    let baseURL = APIConfig.baseURL.replacingOccurrences(of: "/api", with: "")
+    return URL(string: baseURL + path)
 }
 
 #Preview {
