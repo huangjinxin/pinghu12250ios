@@ -727,6 +727,19 @@ class WorksViewModel: ObservableObject {
         }
     }
 
+    /// 获取书写作品详情（包含完整的 content 和 strokeData）
+    func getCalligraphyDetail(_ id: String) async -> CalligraphyWork? {
+        do {
+            let response: CalligraphyResponse = try await APIService.shared.get("/calligraphy/\(id)")
+            return response.data
+        } catch {
+            #if DEBUG
+            print("❌ 获取书写作品详情失败: \(error)")
+            #endif
+            return nil
+        }
+    }
+
     // MARK: - 重置分页
 
     func resetPagination() {

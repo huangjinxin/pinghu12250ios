@@ -2335,7 +2335,12 @@ struct CalligraphyWorksTabView: View {
                         ForEach(viewModel.calligraphyWorks) { work in
                             CalligraphyWorksCard(work: work)
                                 .onTapGesture {
-                                    selectedWork = work
+                                    // 获取详情（包含完整的 content 和 strokeData）
+                                    Task {
+                                        if let detail = await viewModel.getCalligraphyDetail(work.id) {
+                                            selectedWork = detail
+                                        }
+                                    }
                                 }
                         }
                     }
@@ -2774,14 +2779,62 @@ struct CalligraphyDetailCell: View {
     }
 }
 
+// MARK: - 完整笔划显示视图（静态显示所有笔划）
+
+struct CompletedStrokesView: View {
+    let strokeData: StrokeDataV2
+    let cellSize: CGSize
+    var strokeColor: Color = .black
+    var lineWidth: CGFloat = 2
+
+    var scale: CGFloat {
+        min(cellSize.width / strokeData.canvas.width, cellSize.height / strokeData.canvas.height)
+    }
+
+    var offsetX: CGFloat {
+        (cellSize.width - strokeData.canvas.width * scale) / 2
+    }
+
+    var offsetY: CGFloat {
+        (cellSize.height - strokeData.canvas.height * scale) / 2
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            var path = Path()
+            for stroke in strokeData.strokes {
+                guard !stroke.points.isEmpty else { continue }
+
+                let firstPoint = stroke.points[0]
+                path.move(to: CGPoint(
+                    x: firstPoint.x * scale + offsetX,
+                    y: firstPoint.y * scale + offsetY
+                ))
+
+                for i in 1..<stroke.points.count {
+                    let point = stroke.points[i]
+                    path.addLine(to: CGPoint(
+                        x: point.x * scale + offsetX,
+                        y: point.y * scale + offsetY
+                    ))
+                }
+            }
+
+            context.stroke(path, with: .color(strokeColor), lineWidth: lineWidth)
+        }
+    }
+}
+
 // MARK: - 笔划动画视图
 
 struct StrokeAnimationView: View {
     let strokeData: StrokeDataV2
     let cellSize: CGSize
+    var onAnimationComplete: (() -> Void)? = nil
+
     @State private var currentStrokeIndex: Int = 0
     @State private var currentPointIndex: Int = 0
-    @State private var animationPath: Path = Path()
+    @State private var isAnimationComplete: Bool = false
 
     var scale: CGFloat {
         min(cellSize.width / strokeData.canvas.width, cellSize.height / strokeData.canvas.height)
@@ -2828,11 +2881,17 @@ struct StrokeAnimationView: View {
     private func startAnimation() {
         currentStrokeIndex = 0
         currentPointIndex = 0
+        isAnimationComplete = false
         animateNextPoint()
     }
 
     private func animateNextPoint() {
-        guard currentStrokeIndex < strokeData.strokes.count else { return }
+        guard currentStrokeIndex < strokeData.strokes.count else {
+            // 动画完成
+            isAnimationComplete = true
+            onAnimationComplete?()
+            return
+        }
 
         let stroke = strokeData.strokes[currentStrokeIndex]
         if currentPointIndex < stroke.points.count {
@@ -2840,8 +2899,9 @@ struct StrokeAnimationView: View {
 
             let delay: TimeInterval
             if currentPointIndex < stroke.points.count && currentPointIndex > 0 {
+                // 使用实际书写时间间隔，不再限制最小值
                 let dt = stroke.points[currentPointIndex].t - stroke.points[currentPointIndex - 1].t
-                delay = min(dt, 0.05)
+                delay = dt
             } else {
                 delay = 0.016
             }
@@ -2852,7 +2912,8 @@ struct StrokeAnimationView: View {
         } else {
             currentStrokeIndex += 1
             currentPointIndex = 0
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            // 笔划之间的间隔
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 animateNextPoint()
             }
         }

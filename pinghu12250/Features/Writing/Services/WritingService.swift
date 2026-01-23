@@ -106,6 +106,15 @@ class WritingService {
         return (data.works, data.total)
     }
 
+    /// 获取作品详情
+    func getWork(id: String) async throws -> CalligraphyWork {
+        let response: CalligraphyResponse = try await api.get("\(APIConfig.Endpoints.calligraphyDetail)/\(id)")
+        guard response.success, let work = response.data else {
+            throw APIError.serverError(0, response.error ?? "获取作品详情失败")
+        }
+        return work
+    }
+
     /// 创建作品
     func createWork(content: String, fontId: String?, imagePath: String?, strokeData: String?) async throws -> CalligraphyWork {
         let body = CreateCalligraphyRequest(content: content, fontId: fontId, imagePath: imagePath, strokeData: strokeData)

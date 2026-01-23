@@ -186,6 +186,16 @@ class WritingViewModel: ObservableObject {
         }
     }
 
+    func loadWorkDetail(_ workId: String) async -> CalligraphyWork? {
+        do {
+            return try await service.getWork(id: workId)
+        } catch {
+            print("加载作品详情失败: \(error)")
+            // 不显示错误提示，以免打断用户体验，仅在控制台记录
+            return nil
+        }
+    }
+
     func saveWork(content: String, image: UIImage, drawing: PKDrawing, canvasSize: CGSize) async -> Bool {
         do {
             // 上传图片
