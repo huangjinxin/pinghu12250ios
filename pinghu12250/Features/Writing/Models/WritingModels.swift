@@ -120,13 +120,34 @@ struct EvaluationData: Codable {
 }
 
 struct EvaluationDetailData: Codable {
-    let recognition: ScoreItem?
-    let strokeQuality: ScoreItem?
-    let aesthetics: ScoreItem?
+    let recognition: RecognitionItem?
+    let structure: ScoreItem?
+    let quality: ScoreItem?
+    let strokeQuality: ScoreItem?  // 兼容旧字段
+    let aesthetics: ScoreItem?     // 兼容旧字段
     let summary: String?
+    let overallScore: Int?
+    let scoreLevel: String?
+    let suggestions: [String]?
+    let improvements: [String]?    // 兼容旧字段，同suggestions
+    let encouragement: String?
 
     struct ScoreItem: Codable {
         let score: Int?
+        let comment: String?
+    }
+
+    struct RecognitionItem: Codable {
+        let score: Int?
+        let comment: String?
+        let top3: [String]?
+        let matchRank: Int?
+        let charScores: [CharScore]?
+    }
+
+    struct CharScore: Codable {
+        let char: String
+        let similarity: Double
     }
 }
 

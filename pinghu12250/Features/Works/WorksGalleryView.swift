@@ -2386,11 +2386,13 @@ struct CalligraphyWorksTabView: View {
 struct CalligraphyWorksCard: View {
     let work: CalligraphyWork
 
-    var contentItems: [(char: String, preview: String?)] {
+    var contentItems: [(char: String, preview: String?, strokeData: StrokeDataV2?)] {
         if let content = work.content {
-            return zip(content.characters, content.previews).map { ($0, $1) }
+            return zip(zip(content.characters, content.previews), content.strokeDataList).map {
+                ($0.0, $0.1, $1)
+            }
         }
-        return work.displayTitle.map { (String($0), nil as String?) }
+        return work.displayTitle.map { (String($0), nil as String?, nil as StrokeDataV2?) }
     }
 
     var body: some View {
@@ -2451,7 +2453,7 @@ struct CalligraphyWorksCard: View {
 }
 
 struct CalligraphyMiniGrid: View {
-    let items: [(char: String, preview: String?)]
+    let items: [(char: String, preview: String?, strokeData: StrokeDataV2?)]
     let workPreview: String?
 
     var body: some View {
@@ -2460,6 +2462,7 @@ struct CalligraphyMiniGrid: View {
                 CalligraphyMiniCell(
                     character: index < items.count ? items[index].char : nil,
                     preview: index < items.count ? items[index].preview : nil,
+                    strokeData: index < items.count ? items[index].strokeData : nil,
                     workPreview: index == 0 ? workPreview : nil
                 )
             }
@@ -2470,6 +2473,7 @@ struct CalligraphyMiniGrid: View {
 struct CalligraphyMiniCell: View {
     let character: String?
     let preview: String?
+    let strokeData: StrokeDataV2?
     let workPreview: String?
 
     var displayPreview: String? {
@@ -2498,7 +2502,10 @@ struct CalligraphyMiniCell: View {
                         .foregroundColor(Color(red: 0.8, green: 0.4, blue: 0.4).opacity(0.25))
                 }
 
-                if let url = calligraphyImageURL(displayPreview) {
+                // 优先显示笔划数据，否则回退到预览图
+                if let data = strokeData {
+                    MiniStrokeView(strokeData: data, cellSize: geo.size)
+                } else if let url = calligraphyImageURL(displayPreview) {
                     AsyncImage(url: url) { image in
                         image.resizable().scaledToFit()
                     } placeholder: {
@@ -2509,6 +2516,50 @@ struct CalligraphyMiniCell: View {
             }
         }
         .aspectRatio(1, contentMode: .fit)
+    }
+}
+
+// 卡片预览用的迷你静态笔划视图
+struct MiniStrokeView: View {
+    let strokeData: StrokeDataV2
+    let cellSize: CGSize
+
+    var scale: CGFloat {
+        min(cellSize.width / strokeData.canvas.width, cellSize.height / strokeData.canvas.height)
+    }
+
+    var offsetX: CGFloat {
+        (cellSize.width - strokeData.canvas.width * scale) / 2
+    }
+
+    var offsetY: CGFloat {
+        (cellSize.height - strokeData.canvas.height * scale) / 2
+    }
+
+    var body: some View {
+        Canvas { context, _ in
+            for stroke in strokeData.strokes {
+                guard !stroke.points.isEmpty else { continue }
+
+                var path = Path()
+                let firstPoint = stroke.points[0]
+                path.move(to: CGPoint(
+                    x: firstPoint.x * scale + offsetX,
+                    y: firstPoint.y * scale + offsetY
+                ))
+
+                for i in 1..<stroke.points.count {
+                    let point = stroke.points[i]
+                    path.addLine(to: CGPoint(
+                        x: point.x * scale + offsetX,
+                        y: point.y * scale + offsetY
+                    ))
+                }
+
+                let strokeColor = Color(hex: stroke.color)
+                context.stroke(path, with: .color(strokeColor), lineWidth: max(1, stroke.lineWidth * scale * 0.8))
+            }
+        }
     }
 }
 
@@ -2539,6 +2590,7 @@ struct CalligraphyWorksDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showReference = true
     @State private var playingIndex: Int = -1
+    @State private var showDetailedEval = false
 
     var contentItems: [(char: String, preview: String?, strokeData: StrokeDataV2?)] {
         if let content = work.content {
@@ -2620,37 +2672,152 @@ struct CalligraphyWorksDetailSheet: View {
 
     private func evaluationSection(score: Int) -> some View {
         VStack(spacing: 12) {
-            HStack {
-                VStack {
-                    Text("\(score)")
-                        .font(.system(size: 36, weight: .bold))
-                        .foregroundColor(score >= 85 ? .green : score >= 60 ? .blue : .orange)
-                    Text(score >= 85 ? "优秀" : score >= 60 ? "良好" : "需努力")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            // 可点击的总分区域
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showDetailedEval.toggle()
                 }
-                .frame(width: 80)
+            } label: {
+                HStack {
+                    VStack {
+                        Text("\(score)")
+                            .font(.system(size: 36, weight: .bold))
+                            .foregroundColor(score >= 85 ? .green : score >= 60 ? .blue : .orange)
+                        Text(score >= 85 ? "优秀" : score >= 60 ? "良好" : "需努力")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(width: 80)
 
-                if let data = work.evaluationData {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if let recognition = data.recognition?.score {
-                            CalligraphyScoreRow(label: "字形识别", score: recognition, max: 50)
-                        }
-                        if let stroke = data.strokeQuality?.score {
-                            CalligraphyScoreRow(label: "笔画质量", score: stroke, max: 30)
-                        }
-                        if let aesthetics = data.aesthetics?.score {
-                            CalligraphyScoreRow(label: "整体美观", score: aesthetics, max: 20)
+                    if let data = work.evaluationData {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if let recognition = data.recognition?.score {
+                                CalligraphyScoreRow(label: "字形识别", score: recognition, max: 50)
+                            }
+                            if let stroke = data.strokeQuality?.score {
+                                CalligraphyScoreRow(label: "笔画质量", score: stroke, max: 30)
+                            }
+                            if let aesthetics = data.aesthetics?.score {
+                                CalligraphyScoreRow(label: "整体美观", score: aesthetics, max: 20)
+                            }
                         }
                     }
                 }
             }
+            .buttonStyle(.plain)
 
-            if let summary = work.evaluationData?.summary {
-                Text(summary)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // 展开/收起按钮
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showDetailedEval.toggle()
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(showDetailedEval ? "收起详情" : "展开详情")
+                        .font(.caption)
+                    Image(systemName: showDetailedEval ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                }
+                .foregroundColor(.appPrimary)
+            }
+            .buttonStyle(.plain)
+
+            // 展开的详细评价内容
+            if showDetailedEval {
+                VStack(alignment: .leading, spacing: 12) {
+                    Divider()
+
+                    // 总结
+                    if let summary = work.evaluationData?.summary {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("总体评价")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text(summary)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // 字形识别详情
+                    if let recognition = work.evaluationData?.recognition {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("字形识别")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            if let comment = recognition.comment, !comment.isEmpty {
+                                Text(comment)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            // 每个字的评分
+                            if let charScores = recognition.charScores, !charScores.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(charScores, id: \.char) { charScore in
+                                            VStack(spacing: 2) {
+                                                Text(charScore.char)
+                                                    .font(.system(size: 20, design: .serif))
+                                                Text("\(Int(charScore.similarity * 100))%")
+                                                    .font(.caption2)
+                                                    .foregroundColor(charScore.similarity >= 0.8 ? .green : charScore.similarity >= 0.6 ? .blue : .orange)
+                                            }
+                                            .frame(width: 44, height: 50)
+                                            .background(Color(.systemGray5))
+                                            .cornerRadius(6)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 笔画质量详情
+                    if let strokeQuality = work.evaluationData?.strokeQuality,
+                       let comment = strokeQuality.comment, !comment.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("笔画质量")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text(comment)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // 整体美观详情
+                    if let aesthetics = work.evaluationData?.aesthetics,
+                       let comment = aesthetics.comment, !comment.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("整体美观")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text(comment)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // 改进建议
+                    if let improvements = work.evaluationData?.improvements, !improvements.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("改进建议")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            ForEach(Array(improvements.enumerated()), id: \.offset) { index, suggestion in
+                                HStack(alignment: .top, spacing: 6) {
+                                    Text("\(index + 1).")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(suggestion)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding()
@@ -2743,7 +2910,16 @@ struct CalligraphyDetailCell: View {
                         .foregroundColor(Color(red: 0.8, green: 0.4, blue: 0.4).opacity(0.3))
                 }
 
-                if let url = calligraphyImageURL(displayPreview) {
+                // 笔划层：播放时显示动画，否则显示完整静态笔划
+                if let data = strokeData {
+                    if isPlaying {
+                        StrokeAnimationView(strokeData: data, cellSize: geo.size)
+                    } else {
+                        // 默认显示完整笔划
+                        CompletedStrokesView(strokeData: data, cellSize: geo.size)
+                    }
+                } else if let url = calligraphyImageURL(displayPreview) {
+                    // 没有笔划数据时回退到预览图
                     AsyncImage(url: url) { image in
                         image.resizable().scaledToFit()
                     } placeholder: {
@@ -2752,23 +2928,20 @@ struct CalligraphyDetailCell: View {
                     .padding(2)
                 }
 
-                // 笔划动画层
-                if isPlaying, let data = strokeData {
-                    StrokeAnimationView(strokeData: data, cellSize: geo.size)
-                }
-
-                // 播放提示
-                VStack {
-                    Spacer()
-                    HStack {
+                // 播放提示（只有有笔划数据时才显示）
+                if strokeData != nil {
+                    VStack {
                         Spacer()
-                        Image(systemName: isPlaying ? "stop.fill" : "play.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white)
-                            .frame(width: 18, height: 18)
-                            .background(isPlaying ? Color.red.opacity(0.8) : Color.black.opacity(0.5))
-                            .clipShape(Circle())
-                            .padding(2)
+                        HStack {
+                            Spacer()
+                            Image(systemName: isPlaying ? "stop.fill" : "play.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(.white)
+                                .frame(width: 18, height: 18)
+                                .background(isPlaying ? Color.red.opacity(0.8) : Color.black.opacity(0.5))
+                                .clipShape(Circle())
+                                .padding(2)
+                        }
                     }
                 }
             }
@@ -2784,8 +2957,6 @@ struct CalligraphyDetailCell: View {
 struct CompletedStrokesView: View {
     let strokeData: StrokeDataV2
     let cellSize: CGSize
-    var strokeColor: Color = .black
-    var lineWidth: CGFloat = 2
 
     var scale: CGFloat {
         min(cellSize.width / strokeData.canvas.width, cellSize.height / strokeData.canvas.height)
@@ -2800,11 +2971,11 @@ struct CompletedStrokesView: View {
     }
 
     var body: some View {
-        Canvas { context, size in
-            var path = Path()
+        Canvas { context, _ in
             for stroke in strokeData.strokes {
                 guard !stroke.points.isEmpty else { continue }
 
+                var path = Path()
                 let firstPoint = stroke.points[0]
                 path.move(to: CGPoint(
                     x: firstPoint.x * scale + offsetX,
@@ -2818,9 +2989,11 @@ struct CompletedStrokesView: View {
                         y: point.y * scale + offsetY
                     ))
                 }
-            }
 
-            context.stroke(path, with: .color(strokeColor), lineWidth: lineWidth)
+                // 使用笔划原始颜色
+                let strokeColor = Color(hex: stroke.color)
+                context.stroke(path, with: .color(strokeColor), lineWidth: stroke.lineWidth * scale)
+            }
         }
     }
 }
@@ -2834,7 +3007,7 @@ struct StrokeAnimationView: View {
 
     @State private var currentStrokeIndex: Int = 0
     @State private var currentPointIndex: Int = 0
-    @State private var isAnimationComplete: Bool = false
+    @State private var isFinished: Bool = false
 
     var scale: CGFloat {
         min(cellSize.width / strokeData.canvas.width, cellSize.height / strokeData.canvas.height)
@@ -2849,29 +3022,51 @@ struct StrokeAnimationView: View {
     }
 
     var body: some View {
-        Canvas { context, size in
-            var path = Path()
+        Canvas { context, _ in
             for (strokeIdx, stroke) in strokeData.strokes.enumerated() {
-                if strokeIdx > currentStrokeIndex { break }
-                let maxPoints = strokeIdx == currentStrokeIndex ? currentPointIndex : stroke.points.count
-                guard maxPoints > 0 else { continue }
-
-                let firstPoint = stroke.points[0]
-                path.move(to: CGPoint(
-                    x: firstPoint.x * scale + offsetX,
-                    y: firstPoint.y * scale + offsetY
-                ))
-
-                for i in 1..<min(maxPoints, stroke.points.count) {
-                    let point = stroke.points[i]
-                    path.addLine(to: CGPoint(
-                        x: point.x * scale + offsetX,
-                        y: point.y * scale + offsetY
+                // 播放完成后显示所有笔划
+                if isFinished {
+                    guard !stroke.points.isEmpty else { continue }
+                    var path = Path()
+                    let firstPoint = stroke.points[0]
+                    path.move(to: CGPoint(
+                        x: firstPoint.x * scale + offsetX,
+                        y: firstPoint.y * scale + offsetY
                     ))
+                    for i in 1..<stroke.points.count {
+                        let point = stroke.points[i]
+                        path.addLine(to: CGPoint(
+                            x: point.x * scale + offsetX,
+                            y: point.y * scale + offsetY
+                        ))
+                    }
+                    let strokeColor = Color(hex: stroke.color)
+                    context.stroke(path, with: .color(strokeColor), lineWidth: stroke.lineWidth * scale)
+                } else {
+                    // 播放中：只显示已播放的部分
+                    if strokeIdx > currentStrokeIndex { break }
+                    let maxPoints = strokeIdx == currentStrokeIndex ? currentPointIndex : stroke.points.count
+                    guard maxPoints > 0 else { continue }
+
+                    var path = Path()
+                    let firstPoint = stroke.points[0]
+                    path.move(to: CGPoint(
+                        x: firstPoint.x * scale + offsetX,
+                        y: firstPoint.y * scale + offsetY
+                    ))
+
+                    for i in 1..<min(maxPoints, stroke.points.count) {
+                        let point = stroke.points[i]
+                        path.addLine(to: CGPoint(
+                            x: point.x * scale + offsetX,
+                            y: point.y * scale + offsetY
+                        ))
+                    }
+
+                    let strokeColor = Color(hex: stroke.color)
+                    context.stroke(path, with: .color(strokeColor), lineWidth: stroke.lineWidth * scale)
                 }
             }
-
-            context.stroke(path, with: .color(.red), lineWidth: 2)
         }
         .onAppear {
             startAnimation()
@@ -2881,14 +3076,14 @@ struct StrokeAnimationView: View {
     private func startAnimation() {
         currentStrokeIndex = 0
         currentPointIndex = 0
-        isAnimationComplete = false
+        isFinished = false
         animateNextPoint()
     }
 
     private func animateNextPoint() {
         guard currentStrokeIndex < strokeData.strokes.count else {
-            // 动画完成
-            isAnimationComplete = true
+            // 播放完成，保留笔划
+            isFinished = true
             onAnimationComplete?()
             return
         }
@@ -2897,23 +3092,24 @@ struct StrokeAnimationView: View {
         if currentPointIndex < stroke.points.count {
             currentPointIndex += 1
 
+            // 使用真实的时间间隔来还原书写速度，速度提升5倍
             let delay: TimeInterval
             if currentPointIndex < stroke.points.count && currentPointIndex > 0 {
-                // 使用实际书写时间间隔，不再限制最小值
                 let dt = stroke.points[currentPointIndex].t - stroke.points[currentPointIndex - 1].t
-                delay = dt
+                // 时间间隔除以5以提升5倍速度
+                delay = max(0.001, min(dt, 0.2)) / 5.0
             } else {
-                delay = 0.016
+                delay = 0.003 // 默认约300fps（原60fps的5倍）
             }
 
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 animateNextPoint()
             }
         } else {
+            // 进入下一笔，笔划之间短暂停顿（也除以5）
             currentStrokeIndex += 1
             currentPointIndex = 0
-            // 笔划之间的间隔
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
                 animateNextPoint()
             }
         }

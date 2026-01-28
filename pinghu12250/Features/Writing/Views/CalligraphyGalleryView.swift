@@ -395,6 +395,7 @@ private struct WorkDetailSheet: View {
     @State private var showReference = true
     @State private var playingIndex: Int = -1
     @State private var detailedWork: CalligraphyWork?
+    @State private var showDetailedEval = false
 
     var contentItems: [(char: String, preview: String?, strokeData: StrokeDataV2?)] {
         // 优先使用加载到的完整详情数据
@@ -490,38 +491,152 @@ private struct WorkDetailSheet: View {
 
     private func evaluationSection(score: Int) -> some View {
         VStack(spacing: 12) {
-            // 总分
-            HStack {
-                VStack {
-                    Text("\(score)")
-                        .font(.system(size: 36, weight: .bold))
-                        .foregroundColor(score >= 85 ? .green : score >= 60 ? .blue : .orange)
-                    Text(score >= 85 ? "优秀" : score >= 60 ? "良好" : "需努力")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            // 可点击的总分区域
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showDetailedEval.toggle()
                 }
-                .frame(width: 80)
+            } label: {
+                HStack {
+                    VStack {
+                        Text("\(score)")
+                            .font(.system(size: 36, weight: .bold))
+                            .foregroundColor(score >= 85 ? .green : score >= 60 ? .blue : .orange)
+                        Text(score >= 85 ? "优秀" : score >= 60 ? "良好" : "需努力")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(width: 80)
 
-                if let data = work.evaluationData {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if let recognition = data.recognition?.score {
-                            ScoreRow(label: "字形识别", score: recognition, max: 50)
-                        }
-                        if let stroke = data.strokeQuality?.score {
-                            ScoreRow(label: "笔画质量", score: stroke, max: 30)
-                        }
-                        if let aesthetics = data.aesthetics?.score {
-                            ScoreRow(label: "整体美观", score: aesthetics, max: 20)
+                    if let data = work.evaluationData {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if let recognition = data.recognition?.score {
+                                ScoreRow(label: "字形识别", score: recognition, max: 50)
+                            }
+                            if let stroke = data.strokeQuality?.score {
+                                ScoreRow(label: "笔画质量", score: stroke, max: 30)
+                            }
+                            if let aesthetics = data.aesthetics?.score {
+                                ScoreRow(label: "整体美观", score: aesthetics, max: 20)
+                            }
                         }
                     }
                 }
             }
+            .buttonStyle(.plain)
 
-            if let summary = work.evaluationData?.summary {
-                Text(summary)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // 展开/收起按钮
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showDetailedEval.toggle()
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(showDetailedEval ? "收起详情" : "展开详情")
+                        .font(.caption)
+                    Image(systemName: showDetailedEval ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                }
+                .foregroundColor(.appPrimary)
+            }
+            .buttonStyle(.plain)
+
+            // 展开的详细评价内容
+            if showDetailedEval {
+                VStack(alignment: .leading, spacing: 12) {
+                    Divider()
+
+                    // 总结
+                    if let summary = work.evaluationData?.summary {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("总体评价")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text(summary)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // 字形识别详情
+                    if let recognition = work.evaluationData?.recognition {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("字形识别")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            if let comment = recognition.comment, !comment.isEmpty {
+                                Text(comment)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            // 每个字的评分
+                            if let charScores = recognition.charScores, !charScores.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(charScores, id: \.char) { charScore in
+                                            VStack(spacing: 2) {
+                                                Text(charScore.char)
+                                                    .font(.system(size: 20, design: .serif))
+                                                Text("\(Int(charScore.similarity * 100))%")
+                                                    .font(.caption2)
+                                                    .foregroundColor(charScore.similarity >= 0.8 ? .green : charScore.similarity >= 0.6 ? .blue : .orange)
+                                            }
+                                            .frame(width: 44, height: 50)
+                                            .background(Color(.systemGray5))
+                                            .cornerRadius(6)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 笔画质量详情
+                    if let strokeQuality = work.evaluationData?.strokeQuality,
+                       let comment = strokeQuality.comment, !comment.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("笔画质量")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text(comment)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // 整体美观详情
+                    if let aesthetics = work.evaluationData?.aesthetics,
+                       let comment = aesthetics.comment, !comment.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("整体美观")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text(comment)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // 改进建议
+                    if let improvements = work.evaluationData?.improvements, !improvements.isEmpty {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("改进建议")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            ForEach(Array(improvements.enumerated()), id: \.offset) { index, suggestion in
+                                HStack(alignment: .top, spacing: 6) {
+                                    Text("\(index + 1).")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(suggestion)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding()
