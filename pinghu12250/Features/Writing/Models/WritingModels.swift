@@ -18,6 +18,8 @@ struct UserFont: Codable, Identifiable {
     let filePath: String?
     let fileSize: Int?
     let isDefault: Bool?
+    let isOwner: Bool?
+    let uploaderName: String?
     let createdAt: String?
 
     var displayName: String {

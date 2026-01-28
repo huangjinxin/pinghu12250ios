@@ -29,6 +29,11 @@ struct CalligraphyCanvasView: View {
 
                 Divider()
 
+                // 绘图工具栏（原底部工具栏，移到上方防止误触）
+                drawingToolbar
+
+                Divider()
+
                 // 画布区域
                 ZStack {
                     // 背景
@@ -62,9 +67,6 @@ struct CalligraphyCanvasView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .shadow(color: .black.opacity(0.1), radius: 4)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                // 底部工具栏
-                bottomToolbar
             }
         }
         .background(Color(.systemGray6))
@@ -112,9 +114,9 @@ struct CalligraphyCanvasView: View {
         .background(Color(.systemBackground))
     }
 
-    // MARK: - 底部工具栏
+    // MARK: - 绘图工具栏（位于画布上方）
 
-    private var bottomToolbar: some View {
+    private var drawingToolbar: some View {
         VStack(spacing: 12) {
             // 工具选择
             HStack(spacing: 16) {

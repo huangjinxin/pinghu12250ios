@@ -44,7 +44,7 @@ class WritingService {
         var body = Data()
         // 字体文件
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"font\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: font/ttf\r\n\r\n".data(using: .utf8)!)
         body.append(data)
         body.append("\r\n".data(using: .utf8)!)

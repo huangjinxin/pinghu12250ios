@@ -106,18 +106,31 @@ struct FontManagerView: View {
     }
 
     private func handleFileSelection(_ result: Result<[URL], Error>) {
-        guard case .success(let urls) = result, let url = urls.first else { return }
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
 
-        guard url.startAccessingSecurityScopedResource() else { return }
-        defer { url.stopAccessingSecurityScopedResource() }
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
 
-        do {
-            selectedFontData = try Data(contentsOf: url)
-            selectedFileName = url.lastPathComponent
-            fontName = url.deletingPathExtension().lastPathComponent
-            showNameSheet = true
-        } catch {
-            viewModel.errorMessage = "读取字体文件失败"
+            do {
+                // 复制文件到临时目录以避免安全作用域问题
+                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                if FileManager.default.fileExists(atPath: tempURL.path) {
+                    try FileManager.default.removeItem(at: tempURL)
+                }
+                try FileManager.default.copyItem(at: url, to: tempURL)
+
+                selectedFontData = try Data(contentsOf: tempURL)
+                selectedFileName = url.lastPathComponent
+                fontName = url.deletingPathExtension().lastPathComponent
+                showNameSheet = true
+            } catch {
+                viewModel.errorMessage = "读取字体文件失败: \(error.localizedDescription)"
+                viewModel.showError = true
+            }
+        case .failure(let error):
+            viewModel.errorMessage = "选择文件失败: \(error.localizedDescription)"
             viewModel.showError = true
         }
     }
@@ -149,16 +162,24 @@ private struct FontCard: View {
     let onDelete: () -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             // 预览字
             Text("永")
-                .font(.system(size: 50))
-                .frame(height: 70)
+                .font(.system(size: 44))
+                .frame(height: 60)
 
             // 字体名
             Text(font.displayName)
                 .font(.caption)
                 .lineLimit(1)
+
+            // 上传者
+            if let uploader = font.uploaderName {
+                Text("by \(uploader)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
 
             // 默认标记
             if font.isDefault == true {
@@ -171,7 +192,7 @@ private struct FontCard: View {
                     .cornerRadius(4)
             }
         }
-        .frame(height: 120)
+        .frame(height: 130)
         .frame(maxWidth: .infinity)
         .background(isSelected ? Color.appPrimary.opacity(0.1) : Color(.systemGray6))
         .cornerRadius(12)
@@ -186,8 +207,11 @@ private struct FontCard: View {
                     Label("设为默认", systemImage: "checkmark.circle")
                 }
             }
-            Button(role: .destructive, action: onDelete) {
-                Label("删除", systemImage: "trash")
+            // 只有上传者才能删除
+            if font.isOwner == true {
+                Button(role: .destructive, action: onDelete) {
+                    Label("删除", systemImage: "trash")
+                }
             }
         }
     }
