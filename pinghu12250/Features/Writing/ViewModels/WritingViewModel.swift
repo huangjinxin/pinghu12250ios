@@ -79,9 +79,40 @@ class WritingViewModel: ObservableObject {
             if selectedFont == nil {
                 selectedFont = fonts.first(where: { $0.isDefault == true }) ?? fonts.first
             }
+            // 下载并注册所有字体
+            await loadAndRegisterFonts()
         } catch {
             showError(error.localizedDescription)
         }
+    }
+
+    /// 下载并注册所有字体
+    private func loadAndRegisterFonts() async {
+        for font in fonts {
+            // 跳过已注册的字体
+            if registeredFontNames[font.id] != nil { continue }
+
+            do {
+                // 构建字体文件URL
+                let fontFileURL = APIConfig.baseURL + APIConfig.Endpoints.fontFile + "/\(font.id)/file"
+                let fontData = try await APIService.shared.downloadFile(from: fontFileURL)
+
+                // 注册字体
+                if let postScriptName = await registerFont(data: fontData, fontId: font.id) {
+                    await MainActor.run {
+                        registeredFontNames[font.id] = postScriptName
+                    }
+                    print("✅ 字体注册成功: \(font.displayName) -> \(postScriptName)")
+                }
+            } catch {
+                print("⚠️ 字体加载失败: \(font.displayName) - \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// 获取字体的PostScript名称（用于UI显示）
+    func getFontName(for fontId: String) -> String? {
+        return registeredFontNames[fontId]
     }
 
     func setDefaultFont(_ font: UserFont) async {
@@ -105,8 +136,22 @@ class WritingViewModel: ObservableObject {
         }
     }
 
-    /// 动态注册字体
-    func registerFont(data: Data, fontId: String) -> String? {
+    /// 动态注册字体（在后台线程执行，避免阻塞主线程）
+    func registerFont(data: Data, fontId: String) async -> String? {
+        return await Task.detached(priority: .userInitiated) {
+            guard let provider = CGDataProvider(data: data as CFData),
+                  let cgFont = CGFont(provider) else { return nil }
+
+            var error: Unmanaged<CFError>?
+            guard CTFontManagerRegisterGraphicsFont(cgFont, &error) else { return nil }
+
+            let ctFont = CTFontCreateWithGraphicsFont(cgFont, 0, nil, nil)
+            return CTFontCopyPostScriptName(ctFont) as String
+        }.value
+    }
+
+    /// 同步版本（兼容旧代码）
+    func registerFontSync(data: Data, fontId: String) -> String? {
         guard let provider = CGDataProvider(data: data as CFData),
               let cgFont = CGFont(provider) else { return nil }
 
@@ -138,6 +183,11 @@ class WritingViewModel: ObservableObject {
     func previousChar() {
         guard currentCharIndex > 0 else { return }
         currentCharIndex -= 1
+    }
+
+    func jumpToChar(_ index: Int) {
+        guard index >= 0 && index < practiceText.count else { return }
+        currentCharIndex = index
     }
 
     func endPractice() {
@@ -196,26 +246,40 @@ class WritingViewModel: ObservableObject {
         }
     }
 
+    /// 保存作品（与Web端一致的数据格式）
     func saveWork(content: String, image: UIImage, drawing: PKDrawing, canvasSize: CGSize) async -> Bool {
         do {
-            // 上传图片
+            // 生成笔画数据
+            let strokeData = StrokeDataV2.from(drawing: drawing, canvasSize: canvasSize)
+
+            // 生成预览图（base64）
             guard let imageData = image.jpegData(compressionQuality: 0.8) else {
                 showError("图片处理失败")
                 return false
             }
-            let uploadResponse = try await APIService.shared.uploadImage(imageData, filename: "calligraphy.jpg")
+            let base64Preview = "data:image/jpeg;base64," + imageData.base64EncodedString()
 
-            // 生成笔画数据
-            let strokeData = StrokeDataV2.from(drawing: drawing, canvasSize: canvasSize)
-            let strokeJSON = strokeData.toJSON()
+            // 构建每个字符的数据（与Web端一致）
+            let characters = content.filter { !$0.isWhitespace }
+            let characterDataList = characters.map { char in
+                CreateCalligraphyRequest.CharacterData(
+                    character: String(char),
+                    strokeData: strokeData,  // 整体笔画数据
+                    preview: base64Preview   // 整体预览图
+                )
+            }
 
-            // 创建作品
-            _ = try await service.createWork(
-                content: content,
+            // 创建请求
+            let request = CreateCalligraphyRequest(
+                title: content,
+                content: characterDataList,
+                preview: base64Preview,
                 fontId: selectedFont?.id,
-                imagePath: uploadResponse.url,
-                strokeData: strokeJSON
+                charCount: characters.count
             )
+
+            // 调用API
+            _ = try await service.createWork(request)
 
             await loadWorks(refresh: true)
             return true

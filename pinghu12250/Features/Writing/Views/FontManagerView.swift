@@ -47,6 +47,7 @@ struct FontManagerView: View {
                     FontCard(
                         font: font,
                         isSelected: viewModel.selectedFont?.id == font.id,
+                        registeredFontName: viewModel.registeredFontNames[font.id],
                         onSelect: { viewModel.selectedFont = font },
                         onSetDefault: { Task { await viewModel.setDefaultFont(font) } },
                         onDelete: { Task { await viewModel.deleteFont(font) } }
@@ -157,15 +158,16 @@ struct FontManagerView: View {
 private struct FontCard: View {
     let font: UserFont
     let isSelected: Bool
+    let registeredFontName: String?  // 注册后的字体名称
     let onSelect: () -> Void
     let onSetDefault: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
         VStack(spacing: 6) {
-            // 预览字
+            // 预览字 - 使用注册的字体
             Text("永")
-                .font(.system(size: 44))
+                .font(fontForPreview)
                 .frame(height: 60)
 
             // 字体名
@@ -214,6 +216,15 @@ private struct FontCard: View {
                 }
             }
         }
+    }
+
+    /// 预览字体
+    private var fontForPreview: Font {
+        if let fontName = registeredFontName {
+            return .custom(fontName, size: 44)
+        }
+        // 未注册时使用楷体作为后备
+        return .custom("STKaiti", size: 44)
     }
 }
 

@@ -277,20 +277,38 @@ enum GridType: String, CaseIterable {
 // MARK: - UIColor扩展
 
 extension UIColor {
-    /// 转换为十六进制字符串
+    /// 转换为十六进制字符串（兼容所有颜色空间）
     var hexString: String {
-        var r: CGFloat = 0
-        var g: CGFloat = 0
-        var b: CGFloat = 0
-        var a: CGFloat = 0
+        // 先转换到 sRGB 颜色空间，确保能正确获取 RGB 值
+        guard let rgbColor = self.cgColor.converted(
+            to: CGColorSpace(name: CGColorSpace.sRGB)!,
+            intent: .defaultIntent,
+            options: nil
+        ) else {
+            // 如果转换失败，尝试直接获取
+            var r: CGFloat = 0
+            var g: CGFloat = 0
+            var b: CGFloat = 0
+            var a: CGFloat = 0
+            getRed(&r, green: &g, blue: &b, alpha: &a)
+            return String(
+                format: "#%02X%02X%02X",
+                Int(max(0, min(1, r)) * 255),
+                Int(max(0, min(1, g)) * 255),
+                Int(max(0, min(1, b)) * 255)
+            )
+        }
 
-        getRed(&r, green: &g, blue: &b, alpha: &a)
+        let components = rgbColor.components ?? [0, 0, 0, 1]
+        let r = components.count > 0 ? components[0] : 0
+        let g = components.count > 1 ? components[1] : 0
+        let b = components.count > 2 ? components[2] : 0
 
         return String(
             format: "#%02X%02X%02X",
-            Int(r * 255),
-            Int(g * 255),
-            Int(b * 255)
+            Int(max(0, min(1, r)) * 255),
+            Int(max(0, min(1, g)) * 255),
+            Int(max(0, min(1, b)) * 255)
         )
     }
 

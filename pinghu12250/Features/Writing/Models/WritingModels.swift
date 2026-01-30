@@ -153,13 +153,20 @@ struct EvaluationDetailData: Codable {
     }
 }
 
-// MARK: - 创建请求
+// MARK: - 创建请求（与Web端一致）
 
 struct CreateCalligraphyRequest: Codable {
-    let content: String
+    let title: String              // 临摹文本
+    let content: [CharacterData]   // 每个字的数据
+    let preview: String            // base64合并预览图
     let fontId: String?
-    let imagePath: String?
-    let strokeData: String?
+    let charCount: Int
+
+    struct CharacterData: Codable {
+        let character: String
+        let strokeData: StrokeDataV2?
+        let preview: String?       // 单字base64预览
+    }
 }
 
 // MARK: - API响应
@@ -203,6 +210,6 @@ struct LikeResponse: Codable {
 
     struct LikeData: Codable {
         let liked: Bool
-        let likeCount: Int
+        let likeCount: Int?  // 可选，后端可能不返回
     }
 }

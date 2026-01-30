@@ -23,11 +23,19 @@ struct ReferenceCharView: View {
             let size = min(geometry.size.width, geometry.size.height)
 
             Text(String(character))
-                .font(fontName != nil ? .custom(fontName!, size: size * 0.8) : .system(size: size * 0.8))
+                .font(fontForDisplay(size: size * 0.8))
                 .foregroundColor(.black.opacity(opacity))
                 .frame(width: size, height: size)
                 .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
         }
+    }
+
+    private func fontForDisplay(size: CGFloat) -> Font {
+        if let fontName = fontName {
+            return .custom(fontName, size: size)
+        }
+        // 使用楷体作为后备字体
+        return .custom("STKaiti", size: size)
     }
 }
 

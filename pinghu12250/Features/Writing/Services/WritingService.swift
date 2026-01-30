@@ -26,7 +26,7 @@ class WritingService {
         return data
     }
 
-    /// 上传字体
+    /// 上传字体（使用专门的上传超时配置）
     func uploadFont(data: Data, filename: String, name: String) async throws -> UserFont {
         guard let url = URL(string: APIConfig.baseURL + APIConfig.Endpoints.fonts) else {
             throw APIError.invalidURL
@@ -56,7 +56,13 @@ class WritingService {
 
         request.httpBody = body
 
-        let (responseData, _) = try await URLSession.shared.data(for: request)
+        // 使用专门的上传超时配置（5分钟）
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 300
+        config.timeoutIntervalForResource = 300
+        let session = URLSession(configuration: config)
+
+        let (responseData, _) = try await session.data(for: request)
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         let response = try decoder.decode(FontResponse.self, from: responseData)
@@ -115,10 +121,9 @@ class WritingService {
         return work
     }
 
-    /// 创建作品
-    func createWork(content: String, fontId: String?, imagePath: String?, strokeData: String?) async throws -> CalligraphyWork {
-        let body = CreateCalligraphyRequest(content: content, fontId: fontId, imagePath: imagePath, strokeData: strokeData)
-        let response: CalligraphyResponse = try await api.post(APIConfig.Endpoints.calligraphy, body: body)
+    /// 创建作品（与Web端一致的参数格式）
+    func createWork(_ request: CreateCalligraphyRequest) async throws -> CalligraphyWork {
+        let response: CalligraphyResponse = try await api.post(APIConfig.Endpoints.calligraphy, body: request)
         guard response.success, let work = response.data else {
             throw APIError.serverError(0, response.error ?? "创建作品失败")
         }
@@ -136,7 +141,7 @@ class WritingService {
         guard response.success, let data = response.data else {
             throw APIError.serverError(0, response.error ?? "操作失败")
         }
-        return (data.liked, data.likeCount)
+        return (data.liked, data.likeCount ?? 0)
     }
 }
 
