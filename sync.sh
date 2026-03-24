@@ -70,13 +70,16 @@ do_push() {
     print_info "💾 创建提交..."
     git commit -m "sync: AI 代码同步 - $TIMESTAMP" -m "🤖 通过 sync.sh 自动同步"
 
-    # 6. 推送到远程
+    # 6. 推送到远程（以本地快照为准覆盖云端）
     CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-    print_info "🌐 推送到 GitHub ($CURRENT_BRANCH)..."
+    print_info "🌐 获取远程状态..."
+    git fetch origin
+
+    print_info "☁️  推送本地快照到 GitHub ($CURRENT_BRANCH)..."
     if git rev-parse --abbrev-ref --symbolic-full-name "@{u}" > /dev/null 2>&1; then
-        git push
+        git push --force-with-lease origin "$CURRENT_BRANCH"
     else
-        git push -u origin "$CURRENT_BRANCH"
+        git push -u --force-with-lease origin "$CURRENT_BRANCH"
     fi
 
     echo ""
@@ -158,8 +161,8 @@ show_help() {
     echo "  push 模式："
     echo "    1. 刷新 Git 索引 (git update-index --refresh)"
     echo "    2. 扫描工作区变化 (git add -A)"
-    echo "    3. 基于文件内容检测变化"
-    echo "    4. 自动提交并推送当前分支"
+    echo "    3. 生成当前本地整仓快照提交"
+    echo "    4. 使用 --force-with-lease 覆盖远程当前分支"
     echo ""
     echo "  pull 模式："
     echo "    1. 暂存本地未提交和未跟踪的修改"
