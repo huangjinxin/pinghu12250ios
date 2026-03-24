@@ -89,11 +89,16 @@ do_pull() {
     print_info "⬇️  开始拉取模式"
     echo ""
 
-    # 1. 检查本地是否有未提交的修改
-    if ! git diff --quiet || ! git diff --cached --quiet; then
+    STASH_CREATED=0
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name "@{u}" 2>/dev/null || echo "origin/$CURRENT_BRANCH")
+
+    # 1. 检查本地是否有未提交或未跟踪的修改
+    if [ -n "$(git status --porcelain)" ]; then
         print_warning "检测到本地有未提交的修改"
-        print_info "尝试暂存本地修改..."
-        git stash save "auto-stash before pull at $(date '+%Y-%m-%d %H:%M:%S')"
+        print_info "尝试暂存本地修改（包含未跟踪文件）..."
+        git stash push -u -m "auto-stash before pull at $(date '+%Y-%m-%d %H:%M:%S')"
+        STASH_CREATED=1
         print_success "本地修改已暂存"
         echo ""
     fi
@@ -102,29 +107,37 @@ do_pull() {
     print_info "🌐 从 GitHub 获取更新..."
     git fetch origin
 
-    # 3. 显示将要同步的变化
+    # 3. 检查同步状态
     LOCAL=$(git rev-parse @)
-    REMOTE=$(git rev-parse @{u})
+    REMOTE=$(git rev-parse "$UPSTREAM")
 
-    if [ $LOCAL = $REMOTE ]; then
+    if [ "$LOCAL" = "$REMOTE" ] && [ "$STASH_CREATED" -eq 0 ]; then
         print_success "本地代码已是最新"
         exit 0
     fi
 
-    print_info "发现远程更新："
-    git log --oneline --graph --decorate HEAD..origin/main | head -5
-    echo ""
+    if [ "$LOCAL" != "$REMOTE" ]; then
+        print_info "发现远程更新："
+        git log --oneline --graph --decorate HEAD.."$UPSTREAM" | head -5
+        echo ""
+    else
+        print_info "远程提交未变化，但将按远端状态覆盖本地工作区"
+        echo ""
+    fi
 
     # 4. 强制同步到远程状态
     print_info "📥 同步远程代码..."
-    git reset --hard origin/main
+    git reset --hard "$UPSTREAM"
 
-    # 5. 清理未跟踪的文件（可选）
+    # 5. 清理未跟踪的文件
     print_info "🧹 清理未跟踪的文件..."
     git clean -fd
 
     echo ""
     print_success "拉取完成！"
+    if [ "$STASH_CREATED" -eq 1 ]; then
+        print_info "原本地修改已保存在 stash，可用 git stash list 查看"
+    fi
     print_info "当前分支状态："
     git status -sb
 }
@@ -149,9 +162,10 @@ show_help() {
     echo "    4. 自动提交并推送当前分支"
     echo ""
     echo "  pull 模式："
-    echo "    1. 暂存本地未提交的修改"
-    echo "    2. 强制同步到远程状态 (git reset --hard)"
-    echo "    3. 清理未跟踪的文件"
+    echo "    1. 暂存本地未提交和未跟踪的修改"
+    echo "    2. 获取远程状态"
+    echo "    3. 即使远端无新提交，也按远端状态覆盖本地工作区"
+    echo "    4. 强制同步到远程状态并清理未跟踪文件"
     echo ""
     echo "示例："
     echo "  # 在开发机器上（AI 修改代码后）"
