@@ -56,12 +56,13 @@ struct CalligraphyGalleryView: View {
                     }
                     .padding()
 
-                    // 加载更多
+                    // 滚动到底部自动加载
                     if viewModel.hasMoreWorks {
-                        Button("加载更多") {
-                            Task { await viewModel.loadWorks() }
-                        }
-                        .padding()
+                        ProgressView()
+                            .padding()
+                            .onAppear {
+                                Task { await viewModel.loadWorks() }
+                            }
                     }
                 }
             }

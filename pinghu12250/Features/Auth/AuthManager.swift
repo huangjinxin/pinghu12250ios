@@ -42,6 +42,10 @@ class AuthManager: ObservableObject {
                let user = try? JSONDecoder().decode(User.self, from: userData) {
                 self.currentUser = user
                 self.isAuthenticated = true
+                if let token = apiService.authToken {
+                    SocketManager.shared.disconnect()
+                    SocketManager.shared.connect(token: token)
+                }
             } else {
                 // 有 token 但没有用户信息，尝试获取
                 Task {
@@ -84,6 +88,10 @@ class AuthManager: ObservableObject {
             // 保存用户信息
             saveUser(user)
 
+            // 建立 Socket 连接（只用于实时接收）
+            SocketManager.shared.disconnect()
+            SocketManager.shared.connect(token: token)
+
             isAuthenticated = true
             currentUser = user
             isLoading = false
@@ -121,6 +129,10 @@ class AuthManager: ObservableObject {
 
             // 保存用户信息
             saveUser(response.user)
+
+            // 建立 Socket 连接（只用于实时接收）
+            SocketManager.shared.disconnect()
+            SocketManager.shared.connect(token: response.token)
 
             // 更新 2FA 状态
             if response.usedBackupCode == true {
@@ -193,6 +205,10 @@ class AuthManager: ObservableObject {
             // 保存用户信息
             saveUser(user)
 
+            // 建立 Socket 连接（只用于实时接收）
+            SocketManager.shared.disconnect()
+            SocketManager.shared.connect(token: token)
+
             isAuthenticated = true
             currentUser = user
             isLoading = false
@@ -214,6 +230,7 @@ class AuthManager: ObservableObject {
     /// 退出登录
     func logout() {
         apiService.clearToken()
+        SocketManager.shared.disconnect()
         UserDefaults.standard.removeObject(forKey: userDefaultsKey)
         currentUser = nil
         isAuthenticated = false
@@ -262,6 +279,10 @@ class AuthManager: ObservableObject {
             saveUser(user)
             currentUser = user
             isAuthenticated = true
+            if let token = apiService.authToken {
+                SocketManager.shared.disconnect()
+                SocketManager.shared.connect(token: token)
+            }
         } catch {
             // Token 可能已过期
             logout()

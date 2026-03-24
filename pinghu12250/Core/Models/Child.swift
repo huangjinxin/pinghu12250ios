@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Combine
 
 /// 孩子信息模型
 struct Child: Codable, Identifiable, Hashable {

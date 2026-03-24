@@ -1,148 +1,243 @@
 # 苹湖少儿空间 iOS App
 
-基于 SwiftUI 构建的 iPad 教育应用，为少儿提供智能学习辅导平台。
+基于 SwiftUI 构建的 iPad 教育应用，包含学习、教材、日记、作品、家长端，以及已经整理完成的消息域结构。
 
 ## 技术栈
 
 | 类别 | 技术选型 |
 |------|---------|
-| UI 框架 | SwiftUI (iOS 15+) |
-| 架构模式 | MVVM + 单向数据流 |
+| UI 框架 | SwiftUI |
+| 架构模式 | MVVM + Store + 单向数据流 |
 | 网络层 | URLSession + async/await |
+| 实时通讯 | Socket.IO |
 | 本地存储 | CoreData + UserDefaults |
 | PDF 渲染 | PDFKit |
 | 手写输入 | PencilKit |
 | 语音识别 | Speech Framework |
 
+## 当前主入口
+
+当前 App 主入口链路：
+
+```text
+pinghu12250App
+└── RootView
+    ├── ParentTabView         # 家长角色
+    └── SidebarNavigationView # 非家长角色
+```
+
+说明：
+
+- `ContentView.swift` 已移除
+- `Features/Home/AppRootView.swift` 已移除
+- 旧 `MainTabView` / `NewMainTabView` 已移除
+- 当前消息与主导航统一由 `SidebarNavigationView` 承担
+
 ## 项目结构
 
-```
+```text
 pinghu12250/
-├── Core/                    # 核心基础设施
-│   ├── Network/            # 网络层 (APIService, APIConfig)
-│   ├── Services/           # 通用服务 (Cache, Download, Settings)
-│   ├── Models/             # 数据模型
-│   ├── Extensions/         # Swift 扩展
-│   ├── UI/                 # 通用 UI 组件
-│   ├── Stability/          # 稳定性保障 (SafeJSONDecoder, RangeGuard)
-│   ├── Watchdog/           # 三级看门狗系统
-│   ├── Sync/               # 数据同步服务
-│   ├── Audio/              # 音频录制与上传
-│   ├── Speech/             # 语音输入
-│   └── Concurrency/        # 并发工具 (TaskBag, AsyncSemaphore)
+├── Core/                      # 核心基础设施
+│   ├── Network/               # APIConfig, APIService, SocketManager, RequestController
+│   ├── Services/              # AppSettings, DownloadManager, Cache 等
+│   ├── Models/                # 通用模型
+│   ├── Extensions/            # Swift 扩展
+│   ├── UI/                    # 复用 UI（含 QRCameraView）
+│   ├── Stability/             # 安全解码、状态校验、保护逻辑
+│   ├── Watchdog/              # 主线程看门狗
+│   ├── Sync/                  # 同步能力
+│   ├── Audio/                 # 音频录制/上传
+│   ├── Speech/                # 语音输入
+│   └── Concurrency/           # 并发工具
 │
-├── Features/               # 功能模块
-│   ├── Auth/              # 登录注册
-│   ├── Home/              # 首页 + 主 Tab
-│   ├── Dashboard/         # 学习仪表盘
-│   ├── Textbook/          # 教材列表
-│   ├── Study/             # 学习模块 (阅读器、笔记、练习)
-│   │   ├── Reader/        # PDF/EPUB 阅读器
-│   │   ├── Notes/         # 笔记系统
-│   │   ├── Practice/      # AI 练习题
-│   │   ├── Annotation/    # 批注系统 (PencilKit)
-│   │   └── Handwriting/   # 手写识别
-│   ├── Diary/             # 日记模块
-│   ├── Growth/            # 成长记录
-│   ├── Wallet/            # 钱包 & 积分
-│   ├── Works/             # 作品展示
-│   ├── Parent/            # 家长端
-│   └── Settings/          # 系统设置
+├── Features/
+│   ├── Auth/                  # 登录注册
+│   ├── Main/                  # 主壳层、侧栏、消息编排
+│   ├── IM/                    # 联系人即时通讯核心
+│   ├── Chat/                  # Bot Chat
+│   ├── Contacts/              # 通讯录、好友、新朋友、AI老师
+│   ├── Dashboard/             # 学习仪表盘
+│   ├── Diary/                 # 日记与成就
+│   ├── Study/                 # 阅读器、笔记、练习、批注、手写
+│   ├── Textbook/              # 教材列表与详情
+│   ├── Works/                 # 作品
+│   ├── Wallet/                # 钱包
+│   ├── Photos/                # 照片
+│   ├── Parent/                # 家长端
+│   ├── Profile/               # 个人中心
+│   ├── More/                  # 更多功能页
+│   ├── Feed/                  # 动态
+│   ├── Friends/               # 朋友关系页
+│   ├── Growth/                # 成长页
+│   ├── Homework/              # 作业
+│   ├── Moments/               # 广场/动态卡片
+│   ├── Pinyin/                # 拼音练习
+│   ├── Points/                # 积分
+│   ├── Reading/               # 阅读模块
+│   ├── Settings/              # 系统设置
+│   ├── Shopping/              # 兑换/购物
+│   ├── Sync/                  # 同步页
+│   ├── Timeline/              # 时间线
+│   ├── Tools/                 # 工具页
+│   └── Writing/               # 书写练习
 │
-└── Assets.xcassets/        # 图片资源
+├── Mock/                      # Mock 数据
+└── Assets.xcassets/           # 图片与图标资源
 ```
 
-## 核心特性
+## 消息域结构
 
-### 1. 智能学习阅读器
-- PDF/EPUB 双格式支持
-- Apple Pencil 手写批注
-- OCR 文字识别
-- AI 辅导对话 (流式响应)
-- 区域选择 + AI 分析
+当前消息域已经整理成清晰边界：
 
-### 2. 稳定性保障系统
-- **三级看门狗**: 监控主线程卡顿，自动恢复
-  - Level 1 (2s): 记录快照
-  - Level 2 (5s): 取消后台任务
-  - Level 3 (10s): 状态重置
-- **内存水位监控**: 70%/80%/90% 三级预警，自动清理缓存
-- **安全 JSON 解码**: 容错解析，失败记录
+### 1. Main Shell
 
-### 3. 离线支持
-- PDF 教材本地缓存
-- 笔记本地优先 + 后台同步
-- 冲突解决界面
+负责整体装配，不直接保存消息真状态：
 
-### 4. 并发控制
-- `RequestController`: 请求去重 + 优先级队列
-- `AsyncSemaphore`: 并发数限制
-- `TaskBag`: 生命周期管理
+- `Features/Main/SidebarNavigationView.swift`
+- `Features/Main/ConversationListSidebarView.swift`
+- `Features/Main/MessageSelection.swift`
 
-## 后端对接
+职责：
 
-后端服务: Express + Prisma + PostgreSQL
+- 左侧菜单切换
+- 消息/通讯录/更多/个人容器编排
+- Bot 会话与 IM 会话详情切换
+- 顶部连接状态条
+- 未读徽标聚合
+
+### 2. IM Core
+
+负责联系人即时通讯：
+
+- `Features/IM/IMCoordinator.swift`
+- `Features/IM/IMConversationStore.swift`
+- `Features/IM/IMMessageStore.swift`
+- `Features/IM/Services/IMService.swift`
+- `Features/IM/Services/FriendService.swift`
+- `Features/IM/Services/IMNavigationHelper.swift`
+- `Features/IM/Views/*`
+
+职责：
+
+- 会话列表
+- 打开会话
+- 历史消息
+- 发送消息
+- 实时接收
+- 已读/未读
+- 加好友 / 新朋友
+
+### 3. Bot Chat
+
+负责 AI 老师 / Bot 对话：
+
+- `Features/Chat/Models/ChatModels.swift`
+- `Features/Chat/Services/ChatService.swift`
+- `Features/Chat/ViewModels/ChatViewModel.swift`
+- `Features/Chat/Views/ChatView.swift`
+- `Features/Chat/Views/CardMessageView.swift`
+- `Features/Chat/Views/ChatBubble.swift`
+- `Features/Chat/Views/BotAvatarView.swift`
+
+职责：
+
+- Bot 列表
+- Bot 会话
+- Bot 文本消息
+- 卡片消息导航
+
+### 4. Contacts
+
+负责关系入口：
+
+- 好友列表
+- 新的朋友
+- 加好友
+- 好友二维码
+- AI 老师入口
+
+### 5. Core/UI
+
+消息域复用组件：
+
+- `Core/UI/QRCameraView.swift`
+
+## 消息链路说明
+
+### IM
+
+IM 当前采用 REST + Socket 混合模式：
+
+- REST：拉会话、拉历史、标记已读、发送消息、创建会话
+- Socket：实时接收、同步补偿、连接状态
+
+关键原则：
+
+- **发送消息主通道是 REST**
+- Socket 只做实时接收与增强
+
+### Bot Chat
+
+Bot Chat 当前是纯 REST 模式。
+
+## 当前已完成的结构整理
+
+已完成：
+
+- 删除未使用旧入口文件
+- 删除 `Deprecated` 旧消息页面
+- 删除异常空嵌套目录 `Features/Works/ios-app/`
+- 将 `ConversationListSidebarView` 归入 `Features/Main`
+- 将 `QRCameraView` 归入 `Core/UI`
+- 保留 `Features/Chat` 作为 Bot Chat，而不再混入联系人 IM
+- 构建通过
+
+## API 说明
+
+后端服务：Express + Prisma + PostgreSQL
+
+当前 `APIConfig.swift` 使用无 `/api` 的 base URL，具体 endpoint 自带 `/api/...` 前缀。
+
+示例：
 
 ```swift
-// API 配置 (Core/Network/APIConfig.swift)
-static let localBaseURL = "http://192.168.88.228:12251/api"
-static let productionBaseURL = "https://pinghu.706tech.cn/api"
+static let localBaseURL = "http://192.168.88.228:12251"
+static let productionBaseURL = "https://kids.706tech.cn"
 ```
 
-主要 API 模块:
-- `/auth` - 认证
-- `/textbooks` - 教材
-- `/textbook-notes` - 笔记
-- `/ai-analysis` - AI 分析 (支持 SSE 流式)
-- `/submissions` - 作业提交
-- `/wallet` - 钱包积分
+消息相关接口分两套：
+
+### IM 接口
+
+- `/api/messages/conversations/list`
+- `/api/messages/:userId`
+- `/api/messages/mark-chat-read`
+- `/api/messages/send`
+- `/api/conversations/create-or-get`
+
+### Bot Chat 接口
+
+- `/api/bot`
+- `/api/chat-message/conversations`
+- `/api/chat-message/:botId/messages`
+- `/api/chat-message/:botId/send`
+- `/api/scan`
 
 ## 开发环境
 
 ### 要求
+
 - macOS 13+
 - Xcode 15+
-- iOS 15+ (iPad 优先)
+- iOS / iPadOS 开发环境
 
-### 运行步骤
+### 运行方式
 
 ```bash
-# 1. 克隆仓库
-git clone https://github.com/huangjinxin/pinghu12250ios.git
-cd pinghu12250ios
-
-# 2. 打开项目
 open pinghu12250.xcodeproj
-
-# 3. 在 Xcode 中配置签名
-#    Signing & Capabilities → Team → 选择开发者账号
-
-# 4. 选择目标设备 (iPad 模拟器或真机)
-
-# 5. 运行 (Cmd + R)
 ```
 
-### 服务器切换
-
-在设置页面可切换服务器环境：
-- 本地开发: `http://192.168.88.228:12251/api`
-- 生产环境: `https://pinghu.706tech.cn/api`
-
-## 代码规范
-
-### 命名约定
-| 类型 | 规范 | 示例 |
-|------|------|------|
-| View | `[功能]View` | `TextbookListView` |
-| ViewModel | `[功能]ViewModel` | `DashboardViewModel` |
-| Service | `[功能]Service` | `NotesService` |
-| Manager | `[功能]Manager` | `DownloadManager` |
-
-### 架构原则
-- View 只负责 UI 渲染
-- 业务逻辑放在 ViewModel 或 Service
-- 网络请求统一通过 `APIService`
-- 使用 `@Published` + Combine 响应式更新
+然后在 Xcode 中选择模拟器或真机运行。
 
 ## 测试账号
 
@@ -152,19 +247,14 @@ open pinghu12250.xcodeproj
 | 家长 | parent_ming | 123456 |
 | 老师 | teacher_wang | 123456 |
 
-## 相关仓库
+## 相关文档
 
-- 主项目 (前后端): [pinghu12250](https://github.com/huangjinxin/pinghu12250)
-- iOS 独立仓库: [pinghu12250ios](https://github.com/huangjinxin/pinghu12250ios)
+- `IM_ARCHITECTURE.md`：消息域架构说明
+- `IM_SUMMARY.md`：消息域整理总结
+- `IM_INTEGRATION.md`：消息模块集成说明
+- `IM_TEST_GUIDE.md`：IM 测试指南
+- `IM_TEST_CHECKLIST.md`：IM 测试检查表
 
-## 版本记录
+## 当前结论
 
-- **v1.0** - 初始版本
-  - 教材阅读 + AI 辅导
-  - 笔记系统 + 手写批注
-  - 练习题 + 积分系统
-  - 家长端监控
-
-## License
-
-Private - All rights reserved
+当前 iOS 文件结构已经基本整理完成，消息域边界已清晰，可作为后续 Web / Android 对齐时的参考基线。

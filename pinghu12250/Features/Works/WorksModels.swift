@@ -506,6 +506,8 @@ struct CreativeWorkItem: Codable, Identifiable {
     let title: String
     let content: String?
     let htmlCode: String?  // 用于诗词HTML渲染
+    let plainText: String?  // 纯文本（用于复制）
+    let type: String?  // 类型（诗/词/古文/现代文/其他）
     let coverImage: String?
     let categoryObj: CreativeWorkCategory?  // 分类对象
     let categoryStr: String?  // 分类字符串（兼容旧格式）
@@ -515,7 +517,7 @@ struct CreativeWorkItem: Codable, Identifiable {
     let author: WorkAuthor?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, content, htmlCode, coverImage, status, likesCount, createdAt, author
+        case id, title, content, htmlCode, plainText, type, coverImage, status, likesCount, createdAt, author
         case categoryObj = "category"
     }
 
@@ -525,6 +527,8 @@ struct CreativeWorkItem: Codable, Identifiable {
         title = try container.decode(String.self, forKey: .title)
         content = try container.decodeIfPresent(String.self, forKey: .content)
         htmlCode = try container.decodeIfPresent(String.self, forKey: .htmlCode)
+        plainText = try container.decodeIfPresent(String.self, forKey: .plainText)
+        type = try container.decodeIfPresent(String.self, forKey: .type)
         coverImage = try container.decodeIfPresent(String.self, forKey: .coverImage)
         status = try container.decodeIfPresent(String.self, forKey: .status)
         likesCount = try container.decodeIfPresent(Int.self, forKey: .likesCount)
@@ -550,6 +554,8 @@ struct CreativeWorkItem: Codable, Identifiable {
         try container.encode(title, forKey: .title)
         try container.encodeIfPresent(content, forKey: .content)
         try container.encodeIfPresent(htmlCode, forKey: .htmlCode)
+        try container.encodeIfPresent(plainText, forKey: .plainText)
+        try container.encodeIfPresent(type, forKey: .type)
         try container.encodeIfPresent(coverImage, forKey: .coverImage)
         try container.encodeIfPresent(status, forKey: .status)
         try container.encodeIfPresent(likesCount, forKey: .likesCount)

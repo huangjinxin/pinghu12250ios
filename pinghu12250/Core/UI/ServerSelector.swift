@@ -13,20 +13,23 @@ import Combine
 enum ServerOption: String, CaseIterable, Identifiable {
     case production = "生产服务器"
     case tailscale = "Tailscale"
+    case tailscaleIP = "Tailscale IP"
     case local = "本地开发"
     case custom = "自定义地址"
 
     var id: String { rawValue }
 
-    /// 默认URL（初始值）
+    /// 默认URL（初始值，不含 /api 后缀）
     var defaultURL: String {
         switch self {
         case .production:
-            return "https://pinghu.706tech.cn/api"
+            return "https://kids.706tech.cn"
         case .tailscale:
-            return "https://beichenmac-mini-3.tail2b26f.ts.net/api"
+            return "https://beichenmac-mini-3.tail2b26f.ts.net"
+        case .tailscaleIP:
+            return "https://100.85.113.25"
         case .local:
-            return "http://192.168.88.228:12251/api"  // 后端端口是 12251，不是 12250
+            return "http://192.168.88.228:12251"
         case .custom:
             return ""
         }
@@ -44,11 +47,12 @@ enum ServerOption: String, CaseIterable, Identifiable {
 
     /// 保存用户自定义的URL
     func saveCustomURL(_ url: String) {
+        let normalizedURL = APIConfig.normalizedBaseURL(url)
         let key = "serverURL_\(self.rawValue)"
-        if url.isEmpty || url == defaultURL {
+        if normalizedURL.isEmpty || normalizedURL == defaultURL {
             UserDefaults.standard.removeObject(forKey: key)
         } else {
-            UserDefaults.standard.set(url, forKey: key)
+            UserDefaults.standard.set(normalizedURL, forKey: key)
         }
     }
 
@@ -72,6 +76,7 @@ enum ServerOption: String, CaseIterable, Identifiable {
         switch self {
         case .production: return "cloud"
         case .tailscale: return "network"
+        case .tailscaleIP: return "number"
         case .local: return "desktopcomputer"
         case .custom: return "link"
         }
@@ -81,6 +86,7 @@ enum ServerOption: String, CaseIterable, Identifiable {
         switch self {
         case .production: return "正式环境"
         case .tailscale: return "VPN 内网"
+        case .tailscaleIP: return "VPN IP 直连"
         case .local: return "本地 HTTP"
         case .custom: return "自定义"
         }
@@ -118,7 +124,7 @@ class ServerConfig: ObservableObject {
     private init() {
         let savedOption = UserDefaults.standard.string(forKey: "selectedServerOption") ?? ""
         self.selectedServer = ServerOption(rawValue: savedOption) ?? .production
-        self.customURL = UserDefaults.standard.string(forKey: "customServerURL") ?? ""
+        self.customURL = APIConfig.normalizedBaseURL(UserDefaults.standard.string(forKey: "customServerURL") ?? "")
 
         // 自动修复错误的端口配置：12250（前端）→ 12251（后端）
         migrateWrongPortIfNeeded()
@@ -129,9 +135,8 @@ class ServerConfig: ObservableObject {
     /// 迁移修复：自动修正错误的端口和 IP 配置
     private func migrateWrongPortIfNeeded() {
         var needsUpdate = false
-        var fixedURL = customURL
+        var fixedURL = APIConfig.normalizedBaseURL(customURL)
 
-        // 修复错误端口：12250（前端）→ 12251（后端）
         if fixedURL.contains(":12250/") {
             fixedURL = fixedURL.replacingOccurrences(of: ":12250/", with: ":12251/")
             needsUpdate = true
@@ -140,7 +145,6 @@ class ServerConfig: ObservableObject {
             #endif
         }
 
-        // 修复错误 IP：248 → 228
         if fixedURL.contains("192.168.88.248") {
             fixedURL = fixedURL.replacingOccurrences(of: "192.168.88.248", with: "192.168.88.228")
             needsUpdate = true
@@ -149,15 +153,36 @@ class ServerConfig: ObservableObject {
             #endif
         }
 
+        let normalizedCustom = APIConfig.normalizedBaseURL(fixedURL)
+        if normalizedCustom != customURL {
+            fixedURL = normalizedCustom
+            needsUpdate = true
+            #if DEBUG
+            print("⚠️ 自动移除 customServerURL 中的 /api 后缀: \(fixedURL)")
+            #endif
+        }
+
         if needsUpdate {
             customURL = fixedURL
             UserDefaults.standard.set(customURL, forKey: "customServerURL")
         }
 
-        // 修复 activeServerURL
+        for option in [ServerOption.production, .tailscale, .tailscaleIP] {
+            let key = "serverURL_\(option.rawValue)"
+            if let savedURL = UserDefaults.standard.string(forKey: key), !savedURL.isEmpty {
+                let normalizedSavedURL = APIConfig.normalizedBaseURL(savedURL)
+                if normalizedSavedURL != savedURL {
+                    UserDefaults.standard.set(normalizedSavedURL, forKey: key)
+                    #if DEBUG
+                    print("⚠️ 自动修复 \(key): \(normalizedSavedURL)")
+                    #endif
+                }
+            }
+        }
+
         if let activeURL = UserDefaults.standard.string(forKey: "activeServerURL") {
-            var fixedActiveURL = activeURL
-            var activeNeedsUpdate = false
+            var fixedActiveURL = APIConfig.normalizedBaseURL(activeURL)
+            var activeNeedsUpdate = fixedActiveURL != activeURL
 
             if fixedActiveURL.contains(":12250/") {
                 fixedActiveURL = fixedActiveURL.replacingOccurrences(of: ":12250/", with: ":12251/")
@@ -167,6 +192,7 @@ class ServerConfig: ObservableObject {
                 fixedActiveURL = fixedActiveURL.replacingOccurrences(of: "192.168.88.248", with: "192.168.88.228")
                 activeNeedsUpdate = true
             }
+            fixedActiveURL = APIConfig.normalizedBaseURL(fixedActiveURL)
 
             if activeNeedsUpdate {
                 UserDefaults.standard.set(fixedActiveURL, forKey: "activeServerURL")
@@ -275,7 +301,7 @@ struct ServerPickerSheet: View {
                 } header: {
                     Text("选择服务器")
                 } footer: {
-                    Text("生产服务器用于正式使用\nTailscale 用于 VPN 内网访问")
+                    Text("生产服务器用于正式使用\nTailscale 用于 VPN 内网访问\nTailscale IP 用于 IP 直连访问")
                         .font(.caption2)
                 }
 
@@ -290,7 +316,7 @@ struct ServerPickerSheet: View {
                                 tempCustomURL = config.customURL
                             }
 
-                        Text("示例：https://your-server.com/api")
+                        Text("示例：https://your-server.com（不含 /api）")
                             .font(.caption)
                             .foregroundColor(.secondary)
 

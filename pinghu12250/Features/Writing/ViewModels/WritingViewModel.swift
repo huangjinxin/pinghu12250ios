@@ -136,6 +136,18 @@ class WritingViewModel: ObservableObject {
         }
     }
 
+    /// 从CGFont提取可用的字体名称（PostScript name → family name fallback）
+    nonisolated private static func extractFontName(from cgFont: CGFont) -> String? {
+        let ctFont = CTFontCreateWithGraphicsFont(cgFont, 0, nil, nil)
+        let psName = CTFontCopyPostScriptName(ctFont) as String
+        if UIFont(name: psName, size: 12) != nil { return psName }
+        let familyName = CTFontCopyFamilyName(ctFont) as String
+        if UIFont(name: familyName, size: 12) != nil { return familyName }
+        let fullName = CTFontCopyFullName(ctFont) as String
+        if UIFont(name: fullName, size: 12) != nil { return fullName }
+        return psName // 最终仍返回psName
+    }
+
     /// 动态注册字体（在后台线程执行，避免阻塞主线程）
     func registerFont(data: Data, fontId: String) async -> String? {
         return await Task.detached(priority: .userInitiated) {
@@ -143,10 +155,17 @@ class WritingViewModel: ObservableObject {
                   let cgFont = CGFont(provider) else { return nil }
 
             var error: Unmanaged<CFError>?
-            guard CTFontManagerRegisterGraphicsFont(cgFont, &error) else { return nil }
+            let registered = CTFontManagerRegisterGraphicsFont(cgFont, &error)
 
-            let ctFont = CTFontCreateWithGraphicsFont(cgFont, 0, nil, nil)
-            return CTFontCopyPostScriptName(ctFont) as String
+            if !registered {
+                // 已注册过的字体不算失败，继续提取名称
+                if let err = error?.takeRetainedValue() {
+                    let code = CFErrorGetCode(err)
+                    guard code == 105 else { return nil } // 105 = alreadyRegistered
+                }
+            }
+
+            return WritingViewModel.extractFontName(from: cgFont)
         }.value
     }
 
@@ -156,12 +175,18 @@ class WritingViewModel: ObservableObject {
               let cgFont = CGFont(provider) else { return nil }
 
         var error: Unmanaged<CFError>?
-        guard CTFontManagerRegisterGraphicsFont(cgFont, &error) else { return nil }
+        let registered = CTFontManagerRegisterGraphicsFont(cgFont, &error)
 
-        let ctFont = CTFontCreateWithGraphicsFont(cgFont, 0, nil, nil)
-        let postScriptName = CTFontCopyPostScriptName(ctFont) as String
-        registeredFontNames[fontId] = postScriptName
-        return postScriptName
+        if !registered {
+            if let err = error?.takeRetainedValue() {
+                let code = CFErrorGetCode(err)
+                guard code == 105 else { return nil }
+            }
+        }
+
+        let name = WritingViewModel.extractFontName(from: cgFont)
+        if let name { registeredFontNames[fontId] = name }
+        return name
     }
 
     // MARK: - 练习操作
@@ -289,6 +314,69 @@ class WritingViewModel: ObservableObject {
         }
     }
 
+    /// 逐字保存作品（与Web端saveWork一致的数据格式）
+    func saveWorkPerChar(text: String, records: [(character: String, strokeData: StrokeDataV2, preview: String)], fontId: String?) async -> Bool {
+        do {
+            // 生成合并预览图
+            let combinedPreview = generateCombinedPreview(from: records.map { $0.preview })
+
+            let request = CreateCalligraphyRequest(
+                title: text,
+                content: records.map {
+                    CreateCalligraphyRequest.CharacterData(
+                        character: $0.character,
+                        strokeData: $0.strokeData,
+                        preview: $0.preview
+                    )
+                },
+                preview: combinedPreview,
+                fontId: fontId,
+                charCount: records.count
+            )
+
+            _ = try await service.createWork(request)
+            await loadWorks(refresh: true)
+            return true
+        } catch {
+            showError(error.localizedDescription)
+            return false
+        }
+    }
+
+    /// 生成合并预览图（与Web端generateCombinedPreview一致）
+    private func generateCombinedPreview(from previews: [String]) -> String {
+        let cellSize: CGFloat = 100
+        let padding: CGFloat = 10
+        let cols = min(previews.count, 5)
+        let rows = Int(ceil(Double(previews.count) / Double(cols)))
+        let width = CGFloat(cols) * cellSize + padding * 2
+        let height = CGFloat(rows) * cellSize + padding * 2
+
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height))
+        let image = renderer.image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+            for (i, base64) in previews.enumerated() {
+                let col = i % cols
+                let row = i / cols
+                let x = padding + CGFloat(col) * cellSize
+                let y = padding + CGFloat(row) * cellSize
+                let rect = CGRect(x: x, y: y, width: cellSize, height: cellSize)
+
+                // 解析 base64 预览图
+                if let dataStr = base64.components(separatedBy: ",").last,
+                   let data = Data(base64Encoded: dataStr),
+                   let img = UIImage(data: data) {
+                    img.draw(in: rect)
+                }
+            }
+        }
+
+        guard let pngData = image.pngData() else { return "" }
+        return "data:image/png;base64," + pngData.base64EncodedString()
+    }
+
     func deleteWork(_ work: CalligraphyWork) async {
         do {
             try await service.deleteWork(id: work.id)
@@ -300,12 +388,10 @@ class WritingViewModel: ObservableObject {
 
     func toggleLike(_ work: CalligraphyWork) async {
         do {
-            let (liked, count) = try await service.toggleLike(id: work.id)
+            let (liked, _) = try await service.toggleLike(id: work.id)
             if let index = works.firstIndex(where: { $0.id == work.id }) {
-                // 由于CalligraphyWork是struct，需要重新创建
-                var updatedWork = works[index]
-                // 这里简化处理，实际需要更新isLiked和likeCount
-                works[index] = updatedWork
+                works[index].isLiked = liked
+                works[index].likesCount = (works[index].likesCount ?? 0) + (liked ? 1 : -1)
             }
         } catch {
             showError(error.localizedDescription)

@@ -33,6 +33,7 @@ struct WritingView: View {
                 }
             }
         }
+        .navigationTitle("书写")
         .alert("错误", isPresented: $viewModel.showError) {
             Button("确定", role: .cancel) {}
         } message: {

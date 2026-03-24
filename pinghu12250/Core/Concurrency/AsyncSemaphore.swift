@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Combine
 
 /// 异步信号量，用于限制并发任务数量
 actor AsyncSemaphore {

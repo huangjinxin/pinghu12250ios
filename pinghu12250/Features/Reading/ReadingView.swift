@@ -17,7 +17,6 @@ struct ReadingView: View {
     @State private var updateToastMessage = ""
 
     var body: some View {
-        NavigationStack {
             // 直接显示我的教材（去掉顶层 tab 切换）
             MyTextbooksView(viewModel: viewModel)
                 .background(Color(.systemGroupedBackground))
@@ -66,7 +65,6 @@ struct ReadingView: View {
                         .animation(.easeInOut(duration: 0.2), value: showUpdateToast)
                     }
                 }
-        }
         .task {
             await viewModel.loadAllData()
         }

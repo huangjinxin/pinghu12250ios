@@ -157,12 +157,21 @@ class APIService: ObservableObject {
 
         // 构建请求
         var request = URLRequest(url: url)
+        print("最终请求URL:", request.url?.absoluteString ?? "")
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         // 添加认证头
         if let token = authToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            #if DEBUG
+            print("🔑 Token: \(token.prefix(20))...")
+            print("📋 Headers: \(request.allHTTPHeaderFields ?? [:])")
+            #endif
+        } else {
+            #if DEBUG
+            print("⚠️ No token found for request")
+            #endif
         }
 
         // 添加请求体
@@ -201,7 +210,6 @@ class APIService: ObservableObject {
             // 解析响应
             do {
                 let decoder = JSONDecoder()
-                decoder.keyDecodingStrategy = .convertFromSnakeCase
                 decoder.dateDecodingStrategy = .iso8601
                 return try decoder.decode(T.self, from: data)
             } catch {

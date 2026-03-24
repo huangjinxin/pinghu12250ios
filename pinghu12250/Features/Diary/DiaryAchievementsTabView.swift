@@ -439,14 +439,12 @@ class DiaryAchievementsViewModel: ObservableObject {
         error = nil
 
         do {
-            async let achievementsTask: AchievementsResponse = APIService.shared.get(
+            let achievementsRes: AchievementsResponse = try await APIService.shared.get(
                 APIConfig.Endpoints.diaryGameAchievements
             )
-            async let statsTask: AchievementStatsResponse = APIService.shared.get(
+            let statsRes: AchievementStatsResponse = try await APIService.shared.get(
                 APIConfig.Endpoints.diaryGameAchievementsStats
             )
-
-            let (achievementsRes, statsRes) = try await (achievementsTask, statsTask)
 
             if achievementsRes.success, let data = achievementsRes.data {
                 achievements = data

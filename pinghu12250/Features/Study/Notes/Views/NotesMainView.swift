@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import Combine
 
 /// 笔记主视图（7个Tab）
 struct NotesMainView: View {

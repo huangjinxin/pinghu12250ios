@@ -42,12 +42,12 @@ do_push() {
     print_info "🚀 开始推送模式"
     echo ""
 
-    # 1. 强制刷新 Git 索引（关键步骤）
-    print_info "📝 强制刷新 Git 索引..."
-    git rm -r --cached . > /dev/null 2>&1 || true
+    # 1. 刷新 Git 索引
+    print_info "📝 刷新 Git 索引..."
+    git update-index -q --refresh || true
 
-    # 2. 重新添加所有文件
-    print_info "📦 重新扫描所有文件..."
+    # 2. 扫描工作区变化
+    print_info "📦 扫描工作区变化..."
     git add -A
 
     # 3. 检查是否有变化
@@ -71,8 +71,13 @@ do_push() {
     git commit -m "sync: AI 代码同步 - $TIMESTAMP" -m "🤖 通过 sync.sh 自动同步"
 
     # 6. 推送到远程
-    print_info "🌐 推送到 GitHub..."
-    git push origin main
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    print_info "🌐 推送到 GitHub ($CURRENT_BRANCH)..."
+    if git rev-parse --abbrev-ref --symbolic-full-name "@{u}" > /dev/null 2>&1; then
+        git push
+    else
+        git push -u origin "$CURRENT_BRANCH"
+    fi
 
     echo ""
     print_success "推送完成！"
@@ -138,10 +143,10 @@ show_help() {
     echo ""
     echo "工作原理："
     echo "  push 模式："
-    echo "    1. 清除 Git 索引缓存 (git rm -r --cached .)"
-    echo "    2. 重新扫描所有文件 (git add -A)"
-    echo "    3. 基于文件内容而非元数据检测变化"
-    echo "    4. 自动提交并推送"
+    echo "    1. 刷新 Git 索引 (git update-index --refresh)"
+    echo "    2. 扫描工作区变化 (git add -A)"
+    echo "    3. 基于文件内容检测变化"
+    echo "    4. 自动提交并推送当前分支"
     echo ""
     echo "  pull 模式："
     echo "    1. 暂存本地未提交的修改"

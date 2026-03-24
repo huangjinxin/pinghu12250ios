@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 /// 可下拉关闭的全屏内容包装器
 struct DismissibleCover<Content: View>: View {

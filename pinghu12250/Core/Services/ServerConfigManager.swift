@@ -18,6 +18,7 @@ class ServerConfigManager: ObservableObject {
     enum PresetServer: String, CaseIterable, Identifiable {
         case production = "生产服务器"
         case tailscale = "Tailscale"
+        case tailscaleIP = "Tailscale IP"
         case custom = "自定义地址"
 
         var id: String { rawValue }
@@ -25,9 +26,11 @@ class ServerConfigManager: ObservableObject {
         var baseURL: String {
             switch self {
             case .production:
-                return "https://pinghu.706tech.cn/api"
+                return "https://kids.706tech.cn"
             case .tailscale:
-                return "https://beichenmac-mini-3.tail2b26f.ts.net/api"
+                return "https://beichenmac-mini-3.tail2b26f.ts.net"
+            case .tailscaleIP:
+                return "https://100.85.113.25"
             case .custom:
                 return "" // 使用自定义地址
             }
@@ -66,7 +69,7 @@ class ServerConfigManager: ObservableObject {
 
     var currentBaseURL: String {
         switch selectedPreset {
-        case .tailscale, .production:
+        case .tailscale, .tailscaleIP, .production:
             return selectedPreset.baseURL
         case .custom:
             return customURL.isEmpty ? PresetServer.production.baseURL : customURL

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 /// 朗读控制栏
 struct SpeechControlBar: View {

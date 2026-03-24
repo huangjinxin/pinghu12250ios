@@ -15,6 +15,7 @@ struct LoginView: View {
     @State private var isShowingRegister = false
     @State private var twoFactorCode = ""
     @State private var useBackupCode = false
+    @State private var showLearningTools = false
     @FocusState private var focusedField: Field?
 
     enum Field {
@@ -58,6 +59,9 @@ struct LoginView: View {
         }
         .sheet(isPresented: $isShowingRegister) {
             RegisterView()
+        }
+        .fullScreenCover(isPresented: $showLearningTools) {
+            LearningToolsView()
         }
     }
 
@@ -215,6 +219,21 @@ struct LoginView: View {
             }
             .font(.subheadline)
             .frame(maxWidth: .infinity)
+
+            // 学习工具按钮
+            Button {
+                showLearningTools = true
+            } label: {
+                HStack {
+                    Image(systemName: "wrench.and.screwdriver.fill")
+                    Text("学习工具")
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(Color(.systemGray6))
+                .foregroundColor(.primary)
+                .cornerRadius(12)
+            }
 
             // 演示账户
             demoAccountsSection

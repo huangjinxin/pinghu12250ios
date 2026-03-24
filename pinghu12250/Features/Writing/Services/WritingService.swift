@@ -45,7 +45,8 @@ class WritingService {
         // 字体文件
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"font\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
-        body.append("Content-Type: font/ttf\r\n\r\n".data(using: .utf8)!)
+        let contentType = filename.lowercased().hasSuffix(".otf") ? "font/otf" : "font/ttf"
+        body.append("Content-Type: \(contentType)\r\n\r\n".data(using: .utf8)!)
         body.append(data)
         body.append("\r\n".data(using: .utf8)!)
         // 字体名称

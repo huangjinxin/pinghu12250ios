@@ -2,7 +2,7 @@
 //  WorksViewModel.swift
 //  pinghu12250
 //
-//  作品广场 ViewModel - 画廊/朗诵/唐诗宋词/购物
+//  作品广场 ViewModel - 画廊/朗诵/诗词古文/购物
 //
 
 import Foundation
@@ -33,13 +33,14 @@ class WorksViewModel: ObservableObject {
     @Published var currentPlayingId: String?
     private var audioPlayer: AVPlayer?
 
-    // MARK: - 唐诗宋词数据（使用 creative-works API）
+    // MARK: - 诗词古文数据（使用 creative-works API）
 
     @Published var poetryWorks: [CreativeWorkItem] = []
     @Published var isLoadingPoetry = false
     @Published var poetryRefreshError: String?
     @Published var poetrySortBy: String = "latest"
     @Published var poetrySearchText: String = ""
+    @Published var poetryType: String? = nil
     @Published var poetryRefreshId: UUID = UUID()
     private var likedPoetryIds: Set<String> = []
 
@@ -89,7 +90,7 @@ class WorksViewModel: ObservableObject {
     @Published var recitationPage: Int = 1
     @Published var recitationHasMore: Bool = true
 
-    // 唐诗宋词分页
+    // 诗词古文分页
     @Published var poetryPage: Int = 1
     @Published var poetryHasMore: Bool = true
 
@@ -268,7 +269,7 @@ class WorksViewModel: ObservableObject {
         currentPlayingId = nil
     }
 
-    // MARK: - 唐诗宋词 API（使用 creative-works API）
+    // MARK: - 诗词古文 API（使用 creative-works API）
 
     func loadPoetryWorks(refresh: Bool = false) async {
         if refresh {
@@ -284,7 +285,7 @@ class WorksViewModel: ObservableObject {
             if let cached: [CreativeWorkItem] = CacheService.shared.getCachedPoetryList(type: [CreativeWorkItem].self) {
                 poetryWorks = cached
                 #if DEBUG
-                print("📦 从本地缓存加载唐诗宋词: \(cached.count) 条")
+                print("📦 从本地缓存加载诗词古文: \(cached.count) 条")
                 #endif
                 // 继续从网络加载最新数据
             }
@@ -298,18 +299,21 @@ class WorksViewModel: ObservableObject {
             var params: [String: String] = [
                 "page": "\(poetryPage)",
                 "limit": "\(pageSize)",
-                "category": "poetry"  // 筛选唐诗宋词分类（slug）
+                "category": "poetry"  // 筛选诗词古文分类（slug）
             ]
 
             if !poetrySearchText.isEmpty {
                 params["search"] = poetrySearchText
+            }
+            if let poetryType = poetryType {
+                params["type"] = poetryType
             }
 
             let queryString = params.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
             let endpoint = "\(APIConfig.Endpoints.creativeWorksPublic)?\(queryString)"
 
             #if DEBUG
-            print("🌐 加载唐诗宋词(creative-works): \(APIConfig.baseURL)\(endpoint)")
+            print("🌐 加载诗词古文(creative-works): \(APIConfig.baseURL)\(endpoint)")
             #endif
 
             // 后端返回 { success, data: { works, pagination } } 格式
@@ -317,14 +321,14 @@ class WorksViewModel: ObservableObject {
 
             guard let data = response.data else {
                 #if DEBUG
-                print("❌ 唐诗宋词返回数据为空, error=\(response.error ?? "无")")
+                print("❌ 诗词古文返回数据为空, error=\(response.error ?? "无")")
                 #endif
                 poetryRefreshError = "加载失败，请检查网络"
                 return
             }
 
             #if DEBUG
-            print("✅ 唐诗宋词加载成功: \(data.works.count) 条, refresh=\(refresh)")
+            print("✅ 诗词古文加载成功: \(data.works.count) 条, refresh=\(refresh)")
             for (index, work) in data.works.prefix(3).enumerated() {
                 print("  [\(index)] id=\(work.id), title=\(work.title)")
             }
@@ -343,7 +347,7 @@ class WorksViewModel: ObservableObject {
             if poetryPage == 1 {
                 try? CacheService.shared.cachePoetryList(data: poetryWorks)
                 #if DEBUG
-                print("💾 已缓存唐诗宋词列表: \(poetryWorks.count) 条")
+                print("💾 已缓存诗词古文列表: \(poetryWorks.count) 条")
                 #endif
             }
 
@@ -356,7 +360,7 @@ class WorksViewModel: ObservableObject {
             poetryPage += 1
         } catch {
             #if DEBUG
-            print("❌ 加载唐诗宋词失败: \(error)")
+            print("❌ 加载诗词古文失败: \(error)")
             if case let APIError.decodingError(decodingError) = error {
                 print("  解码错误详情: \(decodingError)")
             }

@@ -49,11 +49,13 @@ extension StrokeDataV2 {
     static func from(drawing: PKDrawing, canvasSize: CGSize) -> StrokeDataV2 {
         let strokes = drawing.strokes.map { pkStroke -> StrokeInfo in
             let color = pkStroke.ink.color.hexString
-            let points = pkStroke.path.enumerated().map { index, point -> StrokePoint in
-                StrokePoint(
+            let baseTime = pkStroke.path.creationDate.timeIntervalSince1970 * 1000
+            let points = (0..<pkStroke.path.count).map { index -> StrokePoint in
+                let point = pkStroke.path[index]
+                return StrokePoint(
                     x: point.location.x,
                     y: point.location.y,
-                    t: TimeInterval(index) * 0.016,  // 约60fps
+                    t: baseTime + point.timeOffset * 1000,  // ms, 与Web端Date.now()一致
                     p: point.force > 0 ? point.force : 0.5
                 )
             }

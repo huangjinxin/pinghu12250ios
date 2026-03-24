@@ -40,8 +40,8 @@ struct CalligraphyWork: Codable, Identifiable {
     let fontId: String?
     let evaluationScore: Int?
     let evaluationData: EvaluationDetailData?
-    let likesCount: Int?
-    let isLiked: Bool?
+    var likesCount: Int?
+    var isLiked: Bool?
     let createdAt: String
     let author: WorkAuthor?
 

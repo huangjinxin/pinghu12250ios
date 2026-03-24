@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 extension Color {
     /// 品牌主色调
@@ -63,5 +64,44 @@ extension Color {
         case "SCIENCE", "科学": return .subjectScience
         default: return .gray
         }
+    }
+
+    // MARK: - LINE Style Colors (高对比度)
+
+    /// 背景色
+    static let messageBackground = Color(hex: "#FFFFFF")
+    static let messageSecondaryBackground = Color(hex: "#F7F7F7")
+
+    /// 文字颜色
+    static let messagePrimaryText = Color(hex: "#000000")
+    static let messageSecondaryText = Color(hex: "#666666")
+    static let messageTertiaryText = Color(hex: "#999999")
+
+    /// 分割线和边框（高对比度）
+    static let messageSeparator = Color(hex: "#E0E0E0")
+    static let messageBorder = Color(hex: "#D0D0D0")
+
+    /// 气泡颜色 - 用户消息（蓝色）
+    static let userBubbleStart = Color(hex: "#007AFF")
+    static let userBubbleEnd = Color(hex: "#5AC8FA")
+
+    /// 气泡颜色 - AI消息（灰色）
+    static let aiBubbleLight = Color(hex: "#E5E5EA")
+    static let aiBubbleDark = Color(hex: "#3A3A3C")
+
+    /// 卡片背景
+    static let cardBackground = Color(hex: "#FFFFFF")
+    static let cardBackgroundSecondary = Color(hex: "#2C2C2E")
+}
+
+// MARK: - Gradient Support
+extension LinearGradient {
+    /// 用户消息气泡渐变
+    static var userBubble: LinearGradient {
+        LinearGradient(
+            colors: [Color.userBubbleStart, Color.userBubbleEnd],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 }

@@ -34,8 +34,7 @@ struct ReferenceCharView: View {
         if let fontName = fontName {
             return .custom(fontName, size: size)
         }
-        // 使用楷体作为后备字体
-        return .custom("STKaiti", size: size)
+        return Font.fallbackKaiTi(size: size)
     }
 }
 

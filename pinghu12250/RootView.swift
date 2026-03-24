@@ -16,21 +16,18 @@ struct RootView: View {
     @State private var hasCheckedSanity = false
     @State private var showRecoveryUI = false
 
-    // 启动动画状态
     @State private var showSplash = true
+    @State private var bannerText: String?
 
     var body: some View {
-        ZStack {
-            // 主内容（启动动画结束后显示）
+        ZStack(alignment: .top) {
             if !showSplash {
                 mainContent
                     .transition(.opacity.animation(.easeInOut(duration: 0.4)))
             }
 
-            // 启动动画（最上层）
             if showSplash {
                 SplashView {
-                    // 动画完成后切换到主界面
                     withAnimation(.easeInOut(duration: 0.5)) {
                         showSplash = false
                     }
@@ -38,43 +35,60 @@ struct RootView: View {
                 .transition(.opacity)
                 .zIndex(100)
             }
+
+            if let bannerText, !showSplash {
+                Text(bannerText)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.85))
+                    .cornerRadius(12)
+                    .padding(.top, 24)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(200)
+            }
         }
-        // 应用字体大小设置
         .dynamicTypeSize(appSettings.dynamicTypeSize)
         .task {
-            // 启动动画期间可以执行初始化检查
             await performStartupSanityCheck()
         }
-        // 监听导航重置通知
+        .onReceive(NotificationCenter.default.publisher(for: .imIncomingBanner)) { notification in
+            guard let sender = notification.userInfo?["sender"] as? String,
+                  let content = notification.userInfo?["content"] as? String else { return }
+            withAnimation {
+                bannerText = "\(sender)：\(content)"
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                withAnimation {
+                    bannerText = nil
+                }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .stateSanityNavigationReset)) { _ in
             appLog("[RootView] 收到导航重置通知")
         }
     }
 
-    // MARK: - 主内容视图
-
     @ViewBuilder
     private var mainContent: some View {
         ZStack {
-            // 主内容
             Group {
                 if authManager.isAuthenticated {
-                    // 根据角色显示不同界面
                     if authManager.currentUser?.role == .parent {
                         ParentTabView()
                     } else {
-                        MainTabView()
+                        SidebarNavigationView()
                     }
                 } else {
                     LoginView()
                 }
             }
-            .speakable()  // 启用全局文本选择（配合系统朗读功能）
+            .speakable()
             .animation(.easeInOut, value: authManager.isAuthenticated)
             .opacity(showRecoveryUI ? 0.3 : 1.0)
             .disabled(showRecoveryUI)
 
-            // 恢复 UI 覆盖层
             if showRecoveryUI {
                 StartupRecoveryView(
                     result: sanityResult,
@@ -85,7 +99,6 @@ struct RootView: View {
                         NotificationCenter.default.post(name: .stateSanityRecoveryCompleted, object: nil)
                     },
                     onReset: {
-                        // 完全重置：登出并清理
                         Task { @MainActor in
                             authManager.logout()
                         }
@@ -100,8 +113,6 @@ struct RootView: View {
         }
     }
 
-    // MARK: - 启动检查
-
     @MainActor
     private func performStartupSanityCheck() async {
         guard !hasCheckedSanity else { return }
@@ -111,12 +122,10 @@ struct RootView: View {
 
         if sanityResult.needsRecovery {
             appLog("[RootView] 需要恢复: \(sanityResult)")
-            // 先执行清洗
             await Task { @MainActor in
                 StateSanityChecker.shared.performStateCleanup()
             }.value
 
-            // 等待启动动画结束后再显示恢复 UI
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 if !showSplash {
                     withAnimation(.easeInOut(duration: 0.3)) {

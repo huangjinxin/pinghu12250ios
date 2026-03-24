@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Combine
 
 /// 笔记类型
 enum NoteType: String, Codable, CaseIterable {

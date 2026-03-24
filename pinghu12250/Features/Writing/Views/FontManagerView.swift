@@ -223,8 +223,7 @@ private struct FontCard: View {
         if let fontName = registeredFontName {
             return .custom(fontName, size: 44)
         }
-        // 未注册时使用楷体作为后备
-        return .custom("STKaiti", size: 44)
+        return Font.fallbackKaiTi(size: 44)
     }
 }
 

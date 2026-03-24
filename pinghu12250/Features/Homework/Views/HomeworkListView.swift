@@ -26,7 +26,6 @@ struct HomeworkListView: View {
     ]
 
     var body: some View {
-        NavigationStack {
             VStack(spacing: 0) {
                 // 搜索框
                 searchBar
@@ -71,7 +70,6 @@ struct HomeworkListView: View {
             .sheet(item: $viewingHomework) { homework in
                 HomeworkDetailSheet(homework: homework)
             }
-        }
         .task {
             await loadHomeworks()
         }

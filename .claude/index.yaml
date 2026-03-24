@@ -101,8 +101,21 @@ structure:
 
       Wallet/:
         - WalletModels.swift     # 钱包模型
-        - WalletView.swift
+        - WalletView.swift       # 钱包主页（完整实现）
         - WalletViewModel.swift
+        Models/:
+          - PaymentModels.swift  # 支付相关模型
+          - PointModels.swift    # 积分模型
+        ViewModels/:
+          - PaymentViewModel.swift   # 支付逻辑
+          - ExchangeViewModel.swift  # 积分兑换逻辑
+        Views/:
+          - PaymentScanView.swift    # 扫码支付
+          - PaymentConfirmView.swift # 支付确认
+          - PointExchangeView.swift  # 积分兑换
+
+      Points/:
+        - PointsView.swift       # 积分展示页面
 
       Works/:
         - WorksModels.swift      # 作品模型（画廊/朗诵/诗词/市场）
@@ -154,6 +167,19 @@ models:
     - PointLog
     - ExchangeRecord
 
+  PaymentModels.swift:
+    - PayCode            # 支付码
+    - PayOrder           # 支付订单
+    - ScanResult         # 扫码结果
+    - PaymentRequest     # 支付请求
+    - PaymentResponse    # 支付响应
+
+  PointModels.swift:
+    - PointRule          # 积分规则
+    - PointLog           # 积分记录
+    - PointBalance       # 积分余额
+    - ExchangeRequest    # 兑换请求
+
   WorksModels.swift:
     - GalleryWork
     - RecitationWork
@@ -179,6 +205,9 @@ viewmodels:
   - TextbookViewModel      # Features/Reading/
   - MyGrowthViewModel      # Features/Growth/
   - WalletViewModel        # Features/Wallet/
+  - PaymentViewModel       # Features/Wallet/ViewModels/
+  - ExchangeViewModel      # Features/Wallet/ViewModels/
+  - PointsViewModel        # Features/Points/PointsView.swift
   - WorksViewModel         # Features/Works/
 
 # ========== 常见问题解决 ==========

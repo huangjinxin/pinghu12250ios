@@ -30,10 +30,9 @@ struct DiaryListView: View {
     @State private var selectedTab = 0  // 0: 我的日记, 1: AI分析记录, 2: 成就
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // Tab 切换栏
-                tabBar
+        VStack(spacing: 0) {
+            // Tab 切换栏
+            tabBar
 
                 // Tab 内容
                 TabView(selection: $selectedTab) {
@@ -160,7 +159,6 @@ struct DiaryListView: View {
             } message: {
                 Text("预计需要至少2分钟进行分析，期间请不要退出页面。确定要开始吗？")
             }
-        }
         .task {
             // 只在首次加载
             if !hasLoadedDiaries {
@@ -534,7 +532,7 @@ struct DiaryCardView: View {
     // 获取 Web 端地址
     private var webURL: String {
         // 使用生产环境地址
-        "https://pinghu.706tech.cn/diary/\(diary.id)"
+        "https://kids.706tech.cn/diary/\(diary.id)"
     }
 
     var body: some View {

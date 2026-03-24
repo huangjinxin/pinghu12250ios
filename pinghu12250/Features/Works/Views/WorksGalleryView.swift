@@ -14,14 +14,16 @@ struct WorksGalleryView: View {
     @State private var activeTab: WorksTab = .poetry
     @StateObject private var viewModel = WorksViewModel()
 
+    /// Optional initial tab from card navigation
+    var initialTab: String? = nil
+
     enum WorksTab: String, CaseIterable {
         case gallery = "少儿画廊"
         case recitation = "少儿朗诵"
         case diaryAnalysis = "日记分析"
         case creativeWorks = "创意作品"
         case calligraphy = "书写作品"
-        case poetry = "唐诗宋词"
-        case shopping = "购物广场"
+        case poetry = "诗词古文"
 
         var icon: String {
             switch self {
@@ -31,39 +33,43 @@ struct WorksGalleryView: View {
             case .creativeWorks: return "paintbrush.pointed.fill"
             case .calligraphy: return "pencil.tip"
             case .poetry: return "text.book.closed"
-            case .shopping: return "cart.fill"
             }
         }
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // Tab 选择器
-                tabSelector
+        VStack(spacing: 0) {
+            tabSelector
 
-                // 内容区域
-                Group {
-                    switch activeTab {
-                    case .gallery:
-                        GalleryTabView(viewModel: viewModel)
-                    case .recitation:
-                        RecitationTabView(viewModel: viewModel)
-                    case .diaryAnalysis:
-                        DiaryAnalysisTabView(viewModel: viewModel)
-                    case .creativeWorks:
-                        CreativeWorksTabView(viewModel: viewModel)
-                    case .calligraphy:
-                        CalligraphyWorksTabView(viewModel: viewModel)
-                    case .poetry:
-                        PoetryWorksTabView(viewModel: viewModel)
-                    case .shopping:
-                        ShoppingTabView(viewModel: viewModel)
-                    }
+            Group {
+                switch activeTab {
+                case .gallery:
+                    GalleryTabView(viewModel: viewModel)
+                case .recitation:
+                    RecitationTabView(viewModel: viewModel)
+                case .diaryAnalysis:
+                    DiaryAnalysisTabView(viewModel: viewModel)
+                case .creativeWorks:
+                    CreativeWorksTabView(viewModel: viewModel)
+                case .calligraphy:
+                    CalligraphyWorksTabView(viewModel: viewModel)
+                case .poetry:
+                    PoetryWorksTabView(viewModel: viewModel)
                 }
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("创意作品")
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("创意作品")
+        .onAppear {
+            if let initialTab {
+                switch initialTab {
+                case "poetry": activeTab = .poetry
+                case "gallery": activeTab = .gallery
+                case "calligraphy": activeTab = .calligraphy
+                case "recitation": activeTab = .recitation
+                default: break
+                }
+            }
         }
         .alert("提示", isPresented: .constant(viewModel.errorMessage != nil)) {
             Button("确定") { viewModel.errorMessage = nil }
@@ -636,7 +642,7 @@ struct PoetryWorksTabView: View {
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.secondary)
-                    TextField("搜索诗词...", text: $searchText)
+                    TextField("搜索诗词古文...", text: $searchText)
                         .onSubmit {
                             Task { await viewModel.searchPoetry(searchText) }
                         }
@@ -675,12 +681,26 @@ struct PoetryWorksTabView: View {
             }
             .padding()
 
+            // 类型筛选
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(["全部", "诗", "词", "古文", "现代文", "其他"], id: \.self) { type in
+                        let isSelected = (type == "全部" && viewModel.poetryType == nil) || viewModel.poetryType == type
+                        WorksFilterChip(title: type, isSelected: isSelected) {
+                            viewModel.poetryType = type == "全部" ? nil : type
+                            Task { await viewModel.loadPoetryWorks(refresh: true) }
+                        }
+                    }
+                }
+                .padding(.horizontal)
+            }
+
             ScrollView {
                 if viewModel.isLoadingPoetry && viewModel.poetryWorks.isEmpty {
                     ProgressView()
                         .padding(40)
                 } else if viewModel.poetryWorks.isEmpty {
-                    emptyState(icon: "text.book.closed", text: "暂无诗词作品")
+                    emptyState(icon: "text.book.closed", text: "暂无诗词古文")
                 } else {
                     // 调试：显示数据数量
                     #if DEBUG
@@ -697,6 +717,13 @@ struct PoetryWorksTabView: View {
                             PoetryWorkCard(poetry: poetry)
                                 .onTapGesture {
                                     selectedPoetry = poetry
+                                }
+                                .contextMenu {
+                                    Button {
+                                        UIPasteboard.general.string = poetry.plainText ?? poetry.content ?? poetry.title
+                                    } label: {
+                                        Label("复制文本", systemImage: "doc.on.doc")
+                                    }
                                 }
                         }
                     }
@@ -1083,6 +1110,21 @@ struct PoetryDetailSheet: View {
                             }
                             .buttonStyle(.plain)
                         }
+
+                        Button {
+                            let text = poetry.plainText ?? poetry.content ?? poetry.title
+                            UIPasteboard.general.string = text
+                        } label: {
+                            VStack {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.title2)
+                                    .foregroundColor(.appPrimary)
+                                Text("复制")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
 
                         Button {
                             // 分享

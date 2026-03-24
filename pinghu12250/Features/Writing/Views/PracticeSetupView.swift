@@ -71,7 +71,7 @@ struct PracticeSetupView: View {
 
                     // 字数统计
                     HStack {
-                        Text("已输入 \(viewModel.practiceText.count) 字")
+                        Text("已输入 \(viewModel.practiceText.filter { !$0.isWhitespace }.count) 字")
                             .font(.caption)
                             .foregroundColor(.secondary)
 
@@ -196,7 +196,7 @@ private struct FontOption: View {
         if let fontName = fontName {
             return .custom(fontName, size: 30)
         }
-        return .custom("STKaiti", size: 30)
+        return Font.fallbackKaiTi(size: 30)
     }
 }
 
